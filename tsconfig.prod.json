@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "sourceMap": false,
+    "inlineSources": false,
+    "removeComments": true,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    "tsBuildInfoFile": null
+  }
+}

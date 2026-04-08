@@ -1,0 +1,50 @@
+# PANTOUM Settings
+# Configure how upgrades are performed
+
+# === Target Configuration ===
+target_version: "1.22.1"
+excluded_patches: ["FN019002", "FN012019", "FN017001"]
+env_injection_strategy: "webpack-patch"
+
+# === AI Runtime ===
+agent_provider: "claude"
+agent_model: "sonnet"
+thinking_effort: "medium"
+
+# === Version Updates ===
+update_version_numbers: true
+update_package_json: true
+update_readme_files: true
+update_version_badges: true
+maintain_version_history: true
+version_comment: "Upgraded to {SPFxVersion}"
+
+# === Node.js Configuration (PnP Templates) ===
+update_nvmrc_file: true
+update_devcontainer_config: true
+
+# === Third-Party Dependencies ===
+update_production_deps: "none"
+update_dev_deps: "patch"
+clean_install_after_updates: true
+ai_fix_third_party_errors: true
+
+# === Output Options ===
+per_solution_reports: true
+disable_animations: false
+
+# === AI Behaviour ===
+continue_on_solution_fail: false
+ai_fix_m365_errors: true
+ai_fix_build_errors: true
+ai_fix_eslint_properly: false
+ai_fix_typescript_warnings: true
+ai_max_retries: 3
+
+# === History & Parallelism ===
+write_pantoum_history: true
+max_parallel_upgrades: 4
+
+# === Complexity Analysis ===
+analyze_complexity: true
+include_dev_deps_complexity: true

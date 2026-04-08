@@ -1,0 +1,66 @@
+# Example PANTOUM configuration
+# Copy to pantoum.patches.yml in the PANTOUM installation folder
+
+# Target SPFx version for upgrade
+targetVersion: "1.22.1"
+
+# AI behavior settings
+ai:
+  # Model selection: "sonnet" (fast, default) or "opus" (complex migrations)
+  model: "sonnet"
+
+  # Use AI to fix M365 CLI upgrade errors
+  aiFixM365Errors: true
+
+  # Use AI to fix build/test errors after upgrade
+  aiFixBuildErrors: true
+
+  # Fix ESLint properly: true = fix code, false = add eslint-disable comments
+  aiFixEslintProperly: true
+
+  # Fix TypeScript warnings
+  aiFixTypeScriptWarnings: false
+
+# Version update settings
+versionUpdates:
+  # Master toggle for all version updates
+  enabled: true
+
+  # Increment MINOR version in package.json (1.0.0 -> 1.1.0)
+  updatePackageJson: true
+
+  # Update README files with new version
+  updateReadme: true
+
+  # Update version badges
+  updateBadges: true
+
+  # Add entry to version history
+  updateVersionHistory: true
+
+# Third-party dependency management
+thirdParty:
+  # Production dependencies: "none", "patch", "minor", "major"
+  production: "minor"
+
+  # Development dependencies: "none", "patch"
+  development: "patch"
+
+  # Use AI to fix breaking changes from dependency updates
+  aiFixThirdPartyErrors: true
+
+# Output settings
+output:
+  # Generate per-solution reports in solution directories
+  perSolutionReports: true
+
+  # Generate markdown reports (in addition to JSON)
+  markdown: true
+
+# Advanced settings
+advanced:
+  # Continue upgrading other solutions if one fails
+  continueOnFail: false
+
+  # Enable complexity analysis (slower, ~150 npm requests)
+  complexityAnalysis: false

@@ -1,0 +1,775 @@
+# PANTOUM Configuration
+# This file contains upgrade definitions and AI contexts
+# User settings are in pantoum.settings.yml
+
+manualSteps:
+  - id: "M000001"
+    enabled: true
+    title: "Upgrade @pnp/sp to v4"
+    description: "Upgrade pnp sp to 4.17.0 after SPFx upgrade"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@pnp/sp"
+      comparator: "<"
+      version: "4.0.0"
+    type: updateDependency
+    file: package.json
+    depType: dependencies
+    packageName: "@pnp/sp"
+    newVersion: "4.17.0"
+    requiresMigrationAnalysis: true
+    aiContext: "pnp-to-v4"
+  # 1b) Add @pnp/core alongside @pnp/sp — ensures version matches (AI often guesses wrong)
+  - id: "M000001A"
+    enabled: true
+    title: "Add @pnp/core matching @pnp/sp version"
+    description: "Add @pnp/core 4.17.0 to ensure it matches @pnp/sp version (not left to AI)"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@pnp/sp"
+      comparator: "<"
+      version: "4.0.0"
+    type: updateDependency
+    file: package.json
+    depType: dependencies
+    packageName: "@pnp/core"
+    newVersion: "4.17.0"
+  # 1c) Add @pnp/graph when taxonomy is used — deterministic, not left to AI
+  # This ensures the dependency is in package.json before npm install,
+  # so the build-fix AI can use it even if the migration AI misses taxonomy
+  - id: "M000001B"
+    enabled: true
+    title: "Add @pnp/graph for taxonomy migration"
+    description: "Add @pnp/graph 4.17.0 when taxonomy/termStore usage detected (PnP v3→v4)"
+    when: post
+    condition:
+      type: all
+      conditions:
+        - type: packageVersion
+          packageName: "@pnp/sp"
+          comparator: "<"
+          version: "4.0.0"
+        - type: fileContains
+          path: "src/**/*.{ts,tsx}"
+          pattern: "@pnp/(sp|graph)/taxonomy|\\.termStore"
+          glob: true
+    type: updateDependency
+    file: package.json
+    depType: dependencies
+    packageName: "@pnp/graph"
+    newVersion: "4.17.0"
+# 2) upgrade @pnp/spfx-property-controls to 3.22.0
+  - id: "M000002"
+    enabled: true
+    title: "Upgrade @pnp/spfx-property-controls"
+    description: "Upgrade @pnp/spfx-property-controls to 3.22.0 after SPFx upgrade"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@pnp/spfx-property-controls"
+      comparator: "<"
+      version: "3.22.0"
+    type: updateDependency
+    file: package.json
+    depType: dependencies
+    packageName: "@pnp/spfx-property-controls"
+    newVersion: "3.22.0"
+# 3) upgrade @pnp/spfx-controls-react to 3.23.0
+  - id: "M000003"
+    enabled: true
+    title: "Upgrade @pnp/spfx-controls-react"
+    description: "Upgrade @pnp/spfx-controls-react to 3.23.0 after SPFx upgrade"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@pnp/spfx-controls-react"
+      comparator: "<"
+      version: "3.23.0"
+    type: updateDependency
+    file: package.json
+    depType: dependencies
+    packageName: "@pnp/spfx-controls-react"
+    newVersion: "3.23.0"
+  - id: "M000004"
+    enabled: true
+    title: "Remove es6-promise type reference"
+    description: "Remove es6-promise from tsconfig.json"
+    when: post
+    condition:
+      type: fileContains
+      path: tsconfig.json
+      pattern: "es6-promise"
+    type: removeJsonArrayElement
+    file: tsconfig.json
+    jsonPath:
+      - compilerOptions
+      - types
+    value: es6-promise
+    skipIfMissing: true     
+  - id: "M000005"
+    enabled: true
+    title: "Clean node_modules"
+    description: "Wipe node_modules clean"
+    when: post
+    condition:
+      type: always
+    type: runShellCommand
+    command: rm -rf node_modules
+    file: .
+  # Remove package-lock.json before the upgrade
+  - id: "M000006"
+    enabled: true
+    title: "Delete package-lock.json"
+    description: "Delete package-lock.json"
+    when: post
+    condition:
+      type: always
+    type: removeFile
+    file: package-lock.json
+  # Remove api section from serve.json to fix workbench error
+  - id: "M000006A"
+    enabled: true
+    title: "Fix serve.json for workbench"
+    description: "Remove api section from config/serve.json to fix workbench error"
+    when: post
+    condition:
+      type: fileContains
+      path: config/serve.json
+      pattern: "\"api\""
+    type: updateJsonSnippet
+    file: config/serve.json
+    jsonSnippet:
+      "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/spfx-serve.schema.json"
+      "port": 4321
+      "https": true
+      "initialPage": "https://{tenantDomain}/_layouts/workbench.aspx"
+  # 98) npm install - MOVED TO SUCCESS STEPS
+  # - id: "M999998"
+  #   description: "npm install to ensure all dependencies are up to date"
+  #   when: post
+  #   condition:
+  #     type: always
+  #   type: runShellCommand
+  #   command: npm install
+  #   file: .
+  # Add Graph permissions when upgrading from PnP JS v3 to v4 (termStore moved to Graph)
+  # This triggers when @pnp/sp is at the specific v3 version that gets upgraded to v4
+  - id: "M000007"
+    enabled: true
+    title: "Add Graph API permissions for termStore"
+    description: "Add Graph API permissions for termStore access (PnP JS v3→v4)"
+    when: post
+    condition:
+      type: all
+      conditions:
+        - type: packageVersion
+          packageName: "@pnp/sp"
+          comparator: "<"
+          version: "4.0.0"
+        - type: fileContains
+          path: "src/**/*.{ts,tsx}"
+          pattern: "@pnp/(sp|graph)/taxonomy|\\.termStore"
+          glob: true
+    type: updateJsonSnippet
+    file: config/package-solution.json
+    jsonSnippet:
+      solution:
+        webApiPermissionRequests:
+          - resource: "Microsoft Graph"
+            scope: "TermStore.Read.All"
+  # 8) Migrate deprecated React lifecycle methods for React 17+
+  # This detects when React 17+ is present and warns about lifecycle method issues
+  # NOTE: This is a placeholder - actual migration requires Claude Code to analyze
+  # and refactor the specific lifecycle methods in each component
+  - id: "M000008"
+    enabled: true
+    title: "React lifecycle compatibility check"
+    description: "Check for React 17+ lifecycle method compatibility"
+    when: post
+    condition:
+      type: all
+      conditions:
+        - type: packageVersion
+          packageName: "react"
+          comparator: ">="
+          version: "17.0.0"
+        - type: fileContains
+          path: "src/**/*.{ts,tsx}"
+          pattern: "UNSAFE_componentWillMount|UNSAFE_componentWillReceiveProps|UNSAFE_componentWillUpdate"
+          glob: true
+    type: runShellCommand
+    file: .
+    command: |
+      echo "⚠️  IMPORTANT: React 17+ detected!"
+      echo "UNSAFE_ lifecycle methods may not work reliably."
+      echo "Consider migrating:"
+      echo "  - UNSAFE_componentWillReceiveProps → componentDidUpdate"
+      echo "  - UNSAFE_componentWillMount → componentDidMount"
+      echo "  - UNSAFE_componentWillUpdate → componentDidUpdate"
+      echo "Run with --fixSuccessStepErrors to auto-fix if issues occur."
+  # 9) Remove deprecated @microsoft/mgt-spfx package
+  - id: "M000009"
+    enabled: true
+    title: "Remove deprecated mgt-spfx"
+    description: "Remove deprecated @microsoft/mgt-spfx package and migrate code"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@microsoft/mgt-spfx"
+      comparator: ">="
+      version: "0.0.0"
+    type: removeDependency
+    file: package.json
+    depType: dependencies
+    packageName: "@microsoft/mgt-spfx"
+    requiresMigrationAnalysis: true
+    aiContext: "mgt-spfx-deprecation"
+  # 10) Add new MGT packages to replace deprecated mgt-spfx
+  - id: "M000010"
+    enabled: true
+    title: "Add @microsoft/mgt-element"
+    description: "Add new MGT packages (@microsoft/mgt-element, mgt-sharepoint-provider, mgt-components)"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@microsoft/mgt-spfx"
+      comparator: ">="
+      version: "0.0.0"
+    type: updateDependency
+    file: package.json
+    depType: dependencies
+    packageName: "@microsoft/mgt-element"
+    newVersion: "^3.0.1"
+  - id: "M000011"
+    enabled: true
+    title: "Add @microsoft/mgt-sharepoint-provider"
+    description: "Add @microsoft/mgt-sharepoint-provider package"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@microsoft/mgt-spfx"
+      comparator: ">="
+      version: "0.0.0"
+    type: updateDependency
+    file: package.json
+    depType: dependencies
+    packageName: "@microsoft/mgt-sharepoint-provider"
+    newVersion: "^3.0.1"
+  - id: "M000012"
+    enabled: true
+    title: "Add @microsoft/mgt-components"
+    description: "Add @microsoft/mgt-components package"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@microsoft/mgt-spfx"
+      comparator: ">="
+      version: "0.0.0"
+    type: updateDependency
+    file: package.json
+    depType: dependencies
+    packageName: "@microsoft/mgt-components"
+    newVersion: "^3.0.1"
+  # 13) Add @microsoft/mgt-spfx-utils for lazy loading support
+  - id: "M000013"
+    enabled: true
+    title: "Add @microsoft/mgt-spfx-utils"
+    description: "Add @microsoft/mgt-spfx-utils for lazy loading (required by Microsoft)"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@microsoft/mgt-spfx"
+      comparator: ">="
+      version: "0.0.0"
+    type: updateDependency
+    file: package.json
+    depType: dependencies
+    packageName: "@microsoft/mgt-spfx-utils"
+    newVersion: "^3.0.1"
+  # 14) Install Babel dependencies for MGT Lit components
+  - id: "M000014"
+    enabled: true
+    title: "Install Babel deps for MGT Lit"
+    description: "Install Babel dependencies for MGT Lit components (required by Microsoft)"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@microsoft/mgt-spfx"
+      comparator: ">="
+      version: "0.0.0"
+    type: runShellCommand
+    file: .
+    command: npm i -D babel-loader@8.3.0 @babel/plugin-transform-optional-chaining @babel/plugin-transform-nullish-coalescing-operator @babel/plugin-transform-logical-assignment-operators
+  # 15) Remove obsolete rush-stack-compiler for Heft projects (all versions)
+  # SPFx 1.22+ uses Heft (@rushstack/heft) which doesn't need rush-stack-compiler
+  - id: "M000015"
+    enabled: true
+    title: "Remove rush-stack-compiler-4.7"
+    description: "Remove obsolete @microsoft/rush-stack-compiler-4.7 (replaced by Heft)"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@rushstack/heft"
+      comparator: ">="
+      version: "0.0.0"
+    type: removeDependency
+    file: package.json
+    depType: devDependencies
+    packageName: "@microsoft/rush-stack-compiler-4.7"
+    skipIfMissing: true
+  - id: "M000016"
+    enabled: true
+    title: "Remove rush-stack-compiler-4.5"
+    description: "Remove obsolete @microsoft/rush-stack-compiler-4.5 (replaced by Heft)"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@rushstack/heft"
+      comparator: ">="
+      version: "0.0.0"
+    type: removeDependency
+    file: package.json
+    depType: devDependencies
+    packageName: "@microsoft/rush-stack-compiler-4.5"
+    skipIfMissing: true
+  - id: "M000017"
+    enabled: true
+    title: "Remove rush-stack-compiler-5.3"
+    description: "Remove obsolete @microsoft/rush-stack-compiler-5.3 (replaced by Heft)"
+    when: post
+    condition:
+      type: packageVersion
+      packageName: "@rushstack/heft"
+      comparator: ">="
+      version: "0.0.0"
+    type: removeDependency
+    file: package.json
+    depType: devDependencies
+    packageName: "@microsoft/rush-stack-compiler-5.3"
+    skipIfMissing: true
+  # ─────────── Deterministic Steps (run during M365 CLI patch generation) ───────────
+
+  # Sass deprecation config for SPFx 1.22+ Heft
+  - id: "SASS001"
+    enabled: true
+    title: "Silence Sass deprecation warnings"
+    description: "Configure Sass to silence deprecation warnings for SPFx 1.22+ Heft"
+    when: deterministic
+    condition:
+      type: all
+      conditions:
+        - type: instructionPresent
+          instructionId: "FN015010"
+        - type: fileExists
+          path: "config/sass.json"
+    type: updateJsonSnippet
+    file: config/sass.json
+    jsonSnippet:
+      silenceDeprecations:
+        - "mixed-decls"
+      ignoreDeprecationsInDependencies: true
+
+  # Gulp-to-Heft script translation for custom scripts
+  - id: "SCRIPT001"
+    enabled: true
+    title: "Migrate gulp scripts to Heft"
+    description: "Migrate custom gulp scripts to Heft equivalents"
+    when: deterministic
+    condition:
+      type: instructionPresent
+      instructionId: "FN015010"
+    type: regexReplace
+    file: package.json
+    jsonPath:
+      - scripts
+    onlyIfContains: "gulp"
+    rules:
+      - pattern: "gulp serve --nobrowser"
+        replacement: "heft start --nobrowser"
+        flags: "g"
+      - pattern: "gulp serve"
+        replacement: "heft start"
+        flags: "g"
+      - pattern: "gulp bundle --ship"
+        replacement: "heft build --production"
+        flags: "g"
+      - pattern: "gulp bundle"
+        replacement: "heft build"
+        flags: "g"
+      - pattern: "gulp package-solution --ship"
+        replacement: "heft package-solution --production"
+        flags: "g"
+      - pattern: "gulp package-solution"
+        replacement: "heft package-solution"
+        flags: "g"
+      - pattern: "gulp test"
+        replacement: "heft test"
+        flags: "g"
+      - pattern: "gulp clean"
+        replacement: "heft clean"
+        flags: "g"
+      - pattern: "gulp build"
+        replacement: "heft build"
+        flags: "g"
+    postRules:
+      - pattern: "heft clean && heft build --production"
+        replacement: "heft build --clean --production"
+        flags: "g"
+      - pattern: "heft clean && heft build(?! )"
+        replacement: "heft build --clean"
+        flags: "g"
+      - pattern: "heft build && heft build --production"
+        replacement: "heft build --production"
+        flags: "g"
+
+  # Env injection: webpack-patch.json
+  - id: "ENV001"
+    enabled: true
+    title: "Add webpack-patch.json for env vars"
+    description: "Create webpack-patch.json for environment variable injection"
+    when: deterministic
+    condition:
+      type: all
+      conditions:
+        - type: instructionPresent
+          instructionId: "FN015010"
+        - type: fileContains
+          path: "src/**/*.{ts,tsx}"
+          pattern: "process\\.env\\.(?!NODE_ENV\\b)[A-Z][A-Z0-9_]*"
+          glob: true
+    type: addFile
+    file: config/webpack-patch.json
+    content: |
+      {
+        "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/webpack-patch.schema.json",
+        "patchFiles": [
+          "./config/webpack-patch/env-inject.js"
+        ]
+      }
+
+  # Env injection: env-inject.js
+  - id: "ENV002"
+    enabled: true
+    title: "Add env-inject.js DefinePlugin"
+    description: "Create env-inject.js webpack DefinePlugin"
+    when: deterministic
+    condition:
+      type: all
+      conditions:
+        - type: instructionPresent
+          instructionId: "FN015010"
+        - type: fileContains
+          path: "src/**/*.{ts,tsx}"
+          pattern: "process\\.env\\.(?!NODE_ENV\\b)[A-Z][A-Z0-9_]*"
+          glob: true
+    type: addFile
+    file: config/webpack-patch/env-inject.js
+    content: |
+      'use strict';
+      const webpack = require('webpack');
+      const fs = require('fs');
+      const path = require('path');
+
+      const envFile = path.resolve(__dirname, '..', '..', 'env', `${process.env.NODE_ENV || 'dev'}.env`);
+      const envVars = {};
+
+      if (fs.existsSync(envFile)) {
+        const content = fs.readFileSync(envFile, 'utf8');
+        content.split('\n').forEach(line => {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#')) {
+            const [key, ...valueParts] = trimmed.split('=');
+            if (key) {
+              envVars[`process.env.${key.trim()}`] = JSON.stringify(valueParts.join('=').trim());
+            }
+          }
+        });
+      }
+
+      module.exports = {
+        plugins: [
+          new webpack.DefinePlugin(envVars)
+        ]
+      };
+
+  # Env injection: delete obsolete process-env.js
+  - id: "ENV003"
+    enabled: true
+    title: "Remove obsolete process-env.js"
+    description: "Delete obsolete process-env.js (replaced by webpack patch)"
+    when: deterministic
+    condition:
+      type: all
+      conditions:
+        - type: instructionPresent
+          instructionId: "FN015010"
+        - type: fileExists
+          path: "process-env.js"
+        - type: fileContains
+          path: "src/**/*.{ts,tsx}"
+          pattern: "process\\.env\\.(?!NODE_ENV\\b)[A-Z][A-Z0-9_]*"
+          glob: true
+    type: removeFile
+    file: process-env.js
+
+  # Fix M365 CLI bug: heft test → heft build in build script
+  - id: "HEFTFIX001"
+    enabled: true
+    title: "Fix heft test → heft build bug"
+    description: "Fix M365 CLI bug: heft test → heft build in build script"
+    when: deterministic
+    condition:
+      type: instructionPresent
+      instructionId: "FN015010"
+    type: regexReplace
+    file: package.json
+    jsonPath:
+      - scripts
+    onlyIfContains: "heft test"
+    rules:
+      - pattern: "heft test"
+        replacement: "heft build"
+        flags: "g"
+
+  # Fix PnP controls CSS double-hashing in Heft builds (SPFx 1.22+)
+  # Heft's sp-css-loader re-hashes class names that PnP controls already ship pre-hashed,
+  # breaking CSS selector matching. This creates a webpack customization that skips
+  # re-hashing for @pnp packages.
+  # Refs: pnp/sp-dev-fx-controls-react#2082, SharePoint/sp-dev-docs#10603
+  # TODO: Add upper-bound SPFx version condition when Microsoft fixes sp-css-loader
+  - id: "HEFTFIX002"
+    enabled: true
+    title: "Fix PnP controls CSS double-hashing"
+    description: "Create spfx-customize-webpack.js to skip CSS class re-hashing for PnP controls"
+    when: post
+    condition:
+      type: all
+      conditions:
+        - type: packageVersion
+          packageName: "@microsoft/sp-core-library"
+          comparator: ">="
+          version: "1.22.0"
+        - type: any
+          conditions:
+            - type: packageVersion
+              packageName: "@pnp/spfx-controls-react"
+              comparator: ">="
+              version: "0.0.0"
+            - type: packageVersion
+              packageName: "@pnp/spfx-property-controls"
+              comparator: ">="
+              version: "0.0.0"
+        - type: fileAbsent
+          path: "config/spfx-customize-webpack.js"
+    type: addFile
+    file: config/spfx-customize-webpack.js
+    content: |
+      /**
+       * SPFx Webpack Customization — PnP Controls CSS Fix
+       *
+       * Fixes PnP controls CSS styling issue caused by double-hashing.
+       *
+       * Problem: Heft re-hashes CSS class names from PnP controls that already
+       * ship with pre-hashed class names, breaking CSS selector matching.
+       *
+       * Solution: Skip re-hashing for @pnp/spfx-controls-react and
+       * @pnp/spfx-property-controls packages.
+       *
+       * References:
+       * - https://github.com/pnp/sp-dev-fx-controls-react/issues/2082
+       * - https://github.com/SharePoint/sp-dev-docs/issues/10603
+       */
+      module.exports = function customize(webpackConfig) {
+        try {
+          const isPnpControlsCss = (cssPath) =>
+            /node_modules[\\/]+@pnp[\\/]+spfx-(controls-react|property-controls)[\\/]/i.test(cssPath);
+
+          const visitRules = (rules) => {
+            if (!Array.isArray(rules)) return;
+            for (const rule of rules) {
+              if (rule.oneOf) visitRules(rule.oneOf);
+              const uses = Array.isArray(rule.use) ? rule.use :
+                (rule.loader ? [rule] : []);
+              for (const use of uses) {
+                const loader = use.loader || use;
+                if (typeof loader === "string" &&
+                    loader.includes("sp-css-loader")) {
+                  use.options = use.options || {};
+                  const prevGen = use.options.generateCssClassName;
+                  use.options.generateCssClassName =
+                    (existingClassName, cssFilePath, cssContent, production) => {
+                      if (isPnpControlsCss(cssFilePath))
+                        return existingClassName;
+                      return typeof prevGen === "function"
+                        ? prevGen(existingClassName, cssFilePath, cssContent, production)
+                        : existingClassName;
+                    };
+                }
+              }
+            }
+          };
+          if (webpackConfig.module?.rules)
+            visitRules(webpackConfig.module.rules);
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn("PnP CSS customization failed:", e?.message ?? e);
+        }
+        return webpackConfig;
+      };
+
+  # ─────────── Success Steps ───────────
+
+  # 98.5) npm install dependencies first
+  - id: "M999997"
+    enabled: true
+    title: "Install dependencies"
+    description: "npm install dependencies"
+    when: success
+    pattern: "(ERESOLVE|peer|npm error|npm ERR|dependency|conflict)"
+    condition:
+      type: always
+    runCommand: npm install
+  # 99) build the project to ensure everything is working
+  # Uses npm run build which executes the appropriate build command based on project setup:
+  # - SPFx 1.22+: heft commands (heft test --clean --production && heft package-solution --production)
+  # - SPFx 1.21 and earlier: gulp commands
+  - id: "M999999"
+    enabled: true
+    title: "Build project"
+    description: "build the project"
+    when: success
+    pattern: "(Warning - |Error - |error |ERROR|Failed|FAIL|Warning:|warning:|WARN|Errors in TypeScript|Build failed|heft build failed)"
+    condition:
+      type: always
+    runCommand: npm run build
+
+# AI contexts provide instructions for Claude to perform migrations
+aiContexts:
+  pnp-to-v4:
+    description: "PnP JS migration to v4"
+    targetVersion: "4.17.0"
+    template: "pnp-v4-migration"
+    verificationPatterns:
+      - pattern: '\\.data\\.ID'
+        description: "Remove .data wrapper from ID access"
+      - pattern: '\\.data\\.Id'
+        description: "Remove .data wrapper from Id access"
+      - pattern: '@pnp/common'
+        description: "Replace @pnp/common with @pnp/core"
+      - pattern: '@pnp/odata'
+        description: "Replace @pnp/odata with @pnp/queryable"
+      - pattern: '\\.item\\.'
+        description: "Replace .item chaining with getById()"
+      - pattern: 'presets/all'
+        description: "Replace presets/all with selective imports"
+      - pattern: '@pnp/sp/taxonomy'
+        description: "Migrate @pnp/sp/taxonomy to @pnp/graph/taxonomy"
+  mgt-spfx-deprecation:
+    description: "Microsoft Graph Toolkit @microsoft/mgt-spfx migration"
+    targetVersion: "3.0.1"
+    template: "mgt-migration"
+    verificationPatterns:
+      - pattern: '@microsoft/mgt-react'
+        description: "Remove @microsoft/mgt-react imports (use web components)"
+      - pattern: '@microsoft/mgt-spfx'
+        description: "Replace @microsoft/mgt-spfx with mgt-element + mgt-sharepoint-provider"
+      - pattern: 'import.*Person.*from.*mgt'
+        description: "Remove Person component import (use <mgt-person> web component)"
+      - pattern: 'import.*PeoplePicker.*from.*mgt'
+        description: "Remove PeoplePicker import (use <mgt-people-picker> web component)"
+
+# ─────────── Patch Filters ───────────
+# Conditionally exclude M365 CLI patches that conflict with other instructions
+patchFilters:
+  - id: "FILTER001"
+    description: "Skip FN012017 when FN015011 exists - Heft uses its own tsconfig"
+    targetPatchId: "FN012017"
+    action: exclude
+    condition:
+      type: instructionPresent
+      instructionId: "FN015011"
+
+# ─────────── Version Corrections ───────────
+# Fix invalid versions recommended by M365 CLI
+versionCorrections:
+  - packageName: "typescript"
+    badVersion: "5.8.0"
+    correctedVersion: "~5.8.0"
+    description: "M365 CLI bug: TypeScript needs semver range, not exact version"
+
+# ─────────── Detection Patterns ───────────
+# Config-driven patterns for build system detection and analysis
+detectionPatterns:
+  standardScripts:
+    - build
+    - clean
+    - test
+    - start
+    - eject-webpack
+  customGulpfilePatterns:
+    - name: "Environment Variable Injection"
+      pattern: "DefinePlugin|process\\.env"
+    - name: "Webpack Customization"
+      pattern: "configureWebpack\\.mergeConfig"
+    - name: "Task Redirection"
+      pattern: "getTasks|set\\s*\\(\\s*['\"]serve['\"]"
+    - name: "SASS Suppression"
+      pattern: "addSuppression"
+    - name: "Custom Gulp Task"
+      pattern: "gulp\\.task\\s*\\("
+    - name: "Build Events"
+      pattern: "build\\.rig\\.on"
+  heftErrorPatterns:
+    - name: "TypeScript errors"
+      pattern: "errors in typescript"
+    - name: "Generic error"
+      pattern: "\\berror:"
+    - name: "Build failed"
+      pattern: "build failed"
+    - name: "Heft build failed"
+      pattern: "heft build failed"
+    - name: "Webpack error"
+      pattern: "webpack compilation error"
+  gulpErrorPatterns:
+    - name: "Gulp error"
+      pattern: "error -"
+    - name: "Gulp errored"
+      pattern: "errored after"
+    - name: "Task error"
+      pattern: "task errored"
+    - name: "Sub-task error"
+      pattern: "sub task errored"
+    - name: "Task failed"
+      pattern: "task failed"
+
+# ─────────── Excluded Packages ───────────
+# Packages managed by M365 CLI / SPFx framework — never update via third-party updater
+excludedPackages:
+  - "@microsoft/*"
+  - "@pnp/*"
+  - "@fluentui/*"
+  - "office-ui-fabric*"
+  - "@rushstack/*"
+  - "gulp"
+  - "gulp-*"
+  - "typescript"
+  - "eslint"
+  - "eslint-plugin-react-hooks"
+  - "ajv"
+  - "tslint"
+  - "tslint-*"
+  - "react"
+  - "react-dom"
+  - "@types/react"
+  - "@types/react-dom"
+  - "tslib"
+  - "@types/webpack-env"
+  - "spfx-fast-serve"
+  - "@types/sharepoint*"
+  - "@types/es6-*"
+  - "webpack"
+  - "webpack-cli"
+  - "eslint-plugin-react"
+  - "@typescript-eslint/*"

@@ -1,0 +1,130 @@
+/* Collapsed state — thin bar with just the toggle button */
+.collapsed {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 16px;
+  background: var(--ifm-background-surface-color);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.toggleButton {
+  background: var(--ifm-color-emphasis-100);
+  border: 1px solid var(--ifm-color-emphasis-300);
+  cursor: pointer;
+  font-size: 15px;
+  padding: 6px 14px;
+  color: var(--ifm-font-color-base);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+  font-weight: 600;
+}
+
+.toggleButton:hover {
+  background: var(--ifm-color-primary);
+  color: #fff;
+  border-color: var(--ifm-color-primary);
+}
+
+.toggleButton:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.toggleLabel {
+  font-size: 14px;
+}
+
+/* Expanded toolbar */
+.toolbar {
+  background: var(--ifm-background-surface-color);
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sectionLabel {
+  font-weight: 600;
+  color: var(--ifm-font-color-base);
+  margin-right: 2px;
+  font-size: 13px;
+}
+
+.sizeButton,
+.modeButton {
+  background: var(--ifm-color-emphasis-100);
+  border: 1px solid var(--ifm-color-emphasis-300);
+  color: var(--ifm-font-color-base);
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.sizeButton {
+  font-weight: 600;
+}
+
+.sizeButton:hover,
+.modeButton:hover {
+  background: var(--ifm-color-emphasis-200);
+}
+
+.sizeButton:focus-visible,
+.modeButton:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.sizeButtonActive {
+  composes: sizeButton;
+  background: var(--ifm-color-primary) !important;
+  color: #fff !important;
+  border-color: var(--ifm-color-primary) !important;
+}
+
+.modeButtonActive {
+  composes: modeButton;
+  background: var(--ifm-color-primary) !important;
+  color: #fff !important;
+  border-color: var(--ifm-color-primary) !important;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  color: var(--ifm-color-emphasis-600);
+  padding: 2px 8px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.closeButton:hover {
+  color: var(--ifm-font-color-base);
+}
+
+.closeButton:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+.separator {
+  width: 1px;
+  height: 24px;
+  background: var(--ifm-color-emphasis-300);
+}

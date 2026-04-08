@@ -1,0 +1,14 @@
+{
+  "hooks": [
+    {
+      "event": "notification",
+      "matcher": "session_start",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node .claude/hooks/session-start.js"
+        }
+      ]
+    }
+  ]
+}

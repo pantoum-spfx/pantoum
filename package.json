@@ -1,0 +1,87 @@
+{
+  "name": "@pantoum-spfx/pantoum",
+  "version": "0.1.0-alpha",
+  "type": "module",
+  "description": "SPFx upgrade automation with deterministic patches and AI-assisted error recovery",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "pantoum": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "node build.js standard",
+    "build:prod": "node build.js production",
+    "build:opt": "node build.js optimized",
+    "build:compare": "node build.js compare",
+    "build:clean": "node build.js clean",
+    "start": "node dist/cli.js",
+    "start:opt": "node dist-optimized/cli.js",
+    "doctor": "node dist/cli.js doctor",
+    "dev:link": "npm run build && npm link --force",
+    "prod:link": "npm run build:prod && npm link --force",
+    "link": "npm link --force",
+    "parallel-upgrade": "npx tsx scripts/parallel-upgrade.ts",
+    "webapp": "node scripts/start-webapp.cjs",
+    "webapp:stop": "node -e \"const fs=require('fs'),p=require('path'),f=p.join(require('os').tmpdir(),'pantoum-webapp.pid');try{process.kill(parseInt(fs.readFileSync(f,'utf8')));fs.unlinkSync(f);console.log('Stopped')}catch{console.log('Not running')}\"",
+    "prewebapp:dev": "node scripts/ensure-webapp-deps.cjs",
+    "webapp:dev": "npm run dev --prefix pantoum-webapp",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.77",
+    "execa": "^9.6.0",
+    "fast-glob": "^3.3.3",
+    "js-yaml": "^4.1.0",
+    "rimraf": "^6.0.1",
+    "semver": "^7.6.0",
+    "strip-json-comments": "^5.0.3",
+    "yargs": "^18.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.15.29",
+    "@types/semver": "^7.5.0",
+    "@types/yargs": "^17.0.33",
+    "@vitest/coverage-v8": "^4.0.18",
+    "cross-env": "^10.1.0",
+    "esbuild": "^0.25.10",
+    "tsx": "^4.19.2",
+    "typescript": "5.3.3",
+    "vitest": "^4.0.18"
+  },
+  "keywords": [
+    "spfx",
+    "sharepoint",
+    "upgrade",
+    "migration",
+    "m365",
+    "microsoft365",
+    "cli",
+    "ai",
+    "claude",
+    "typescript"
+  ],
+  "author": "Nello D'Andrea (https://github.com/ferrarirosso)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pantoum-spfx/pantoum.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pantoum-spfx/pantoum/issues"
+  },
+  "homepage": "https://github.com/pantoum-spfx/pantoum#readme",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "files": [
+    "dist/",
+    "assets/",
+    "templates/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ]
+}

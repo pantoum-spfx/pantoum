@@ -1,0 +1,84 @@
+# dependencies
+/node_modules/
+
+# production builds
+/dist/
+/dist-optimized/
+/build/
+
+# stray build artifacts in src/
+/src/*.js
+/src/*.d.ts
+
+# debug patch reports and pantoum files
+pantoum_patch-report_*.json
+pantoum_*.log
+pantoum_*.json
+
+# pantoum upgrade run directories
+pantoum_run_*/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# coverage reports
+/coverage/
+/coverage-final.json
+
+# environment files
+.env
+.env.*.local
+
+# IDEs and editors
+/.idea/
+/*.suo
+/*.ntvs*
+/*.njsproj
+/*.sln
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TypeScript cache
+*.tsbuildinfo
+
+# temporary files
+*.tmp
+*.temp
+
+# specific text files to ignore (not all *.txt - too broad)
+potpourri.txt
+pantoum_plan.txt
+nello.txt
+
+# runtime history
+pantoum_history/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# generated reports
+*-report.csv
+codebase-map.html
+
+# explanations folder (generated)
+explanations/
+
+# npm link configuration
+.link-config
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Webapp build artifacts
+/pantoum-webapp/node_modules/
+/pantoum-webapp/dist/
+
+# Website build artifacts
+website/.docusaurus/
+website/build/

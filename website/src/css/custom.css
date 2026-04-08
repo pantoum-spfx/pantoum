@@ -1,0 +1,226 @@
+:root {
+  --ifm-color-primary: #00798c;
+  --ifm-color-primary-dark: #006d7e;
+  --ifm-color-primary-darker: #006777;
+  --ifm-color-primary-darkest: #005562;
+  --ifm-color-primary-light: #00899e;
+  --ifm-color-primary-lighter: #0093a9;
+  --ifm-color-primary-lightest: #00a8c2;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #4dd0e1;
+  --ifm-color-primary-dark: #30c8db;
+  --ifm-color-primary-darker: #26c3d8;
+  --ifm-color-primary-darkest: #1ca6b8;
+  --ifm-color-primary-light: #6ad8e7;
+  --ifm-color-primary-lighter: #74dbea;
+  --ifm-color-primary-lightest: #a1e7f0;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* --- Search styling (@cmfcmf/docusaurus-search-local) --- */
+
+/* Search button in navbar */
+.aa-DetachedSearchButton {
+  min-width: 140px !important;
+}
+
+.aa-DetachedSearchButtonPlaceholder {
+  color: var(--ifm-font-color-base) !important;
+}
+
+[data-theme='dark'] .aa-DetachedSearchButton {
+  background-color: #2a2a2a !important;
+  border-color: #444 !important;
+}
+
+[data-theme='dark'] .aa-DetachedSearchButtonPlaceholder {
+  color: #999 !important;
+}
+
+[data-theme='dark'] .aa-DetachedSearchButtonIcon {
+  color: #999 !important;
+}
+
+/* Search modal — direct element overrides (Algolia theme loads after custom.css) */
+
+[data-theme='dark'] .aa-DetachedContainer .aa-DetachedFormContainer {
+  background: #1e1e1e !important;
+  border-bottom-color: #444 !important;
+}
+
+[data-theme='dark'] .aa-DetachedContainer .aa-Form {
+  background: #181818 !important;
+  border-color: #00798c !important;
+}
+
+[data-theme='dark'] .aa-DetachedContainer .aa-Form:focus-within {
+  border-color: #4dd0e1 !important;
+  box-shadow: 0 0 0 2px rgba(77, 208, 225, 0.3) !important;
+}
+
+[data-theme='dark'] .aa-DetachedContainer .aa-Input {
+  color: #e0e0e0 !important;
+}
+
+[data-theme='dark'] .aa-DetachedContainer .aa-Input::placeholder {
+  color: #999 !important;
+}
+
+[data-theme='dark'] .aa-DetachedContainer .aa-InputWrapperPrefix .aa-Label svg,
+[data-theme='dark'] .aa-DetachedContainer .aa-InputWrapperSuffix svg {
+  color: #999 !important;
+}
+
+[data-theme='dark'] .aa-Panel {
+  background: #1e1e1e !important;
+  border-color: #333 !important;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.6) !important;
+}
+
+[data-theme='dark'] .aa-Item {
+  color: #e0e0e0 !important;
+}
+
+[data-theme='dark'] .aa-Item[aria-selected='true'] {
+  background: rgba(77, 208, 225, 0.15) !important;
+}
+
+[data-theme='dark'] .aa-Item small,
+[data-theme='dark'] .aa-ItemContentSubtitle {
+  color: #999 !important;
+}
+
+[data-theme='dark'] .aa-DetachedCancelButton {
+  color: #999 !important;
+}
+
+[data-theme='dark'] .aa-DetachedContainer .aa-Panel .aa-List {
+  scrollbar-color: #444 #1e1e1e;
+}
+
+[data-theme='dark'] .aa-Panel::-webkit-scrollbar-track,
+[data-theme='dark'] .aa-List::-webkit-scrollbar-track {
+  background: #1e1e1e !important;
+}
+
+[data-theme='dark'] .aa-Panel::-webkit-scrollbar-thumb,
+[data-theme='dark'] .aa-List::-webkit-scrollbar-thumb {
+  background: #444 !important;
+  border-radius: 4px;
+}
+
+/* Hide per-item scrollbar artifacts (visible in dyslexia mode due to spacing) */
+.aa-Item *::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+}
+
+.aa-Item * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  overflow: hidden !important;
+}
+
+/* --- Accessibility: OpenDyslexic font --- */
+
+@font-face {
+  font-family: 'OpenDyslexic';
+  src: url('./OpenDyslexic-Regular.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* --- Accessibility: Text size modes --- */
+
+html[data-a11y-size='small'] {
+  font-size: 85%;
+}
+
+html[data-a11y-size='large'] {
+  font-size: 125%;
+}
+
+html[data-a11y-size='xlarge'] {
+  font-size: 150%;
+}
+
+/* --- Accessibility: Large Print mode --- */
+
+html[data-a11y-mode='large-print'] {
+  line-height: 2;
+  letter-spacing: 0.05em;
+}
+
+/* --- Accessibility: High Contrast mode (light) --- */
+
+html[data-a11y-mode='high-contrast'] {
+  --ifm-color-primary: #004a55;
+  --ifm-color-primary-dark: #003d47;
+  --ifm-color-primary-darker: #003740;
+  --ifm-color-primary-darkest: #002a32;
+  --ifm-font-color-base: #000;
+  --ifm-font-color-secondary: #1a1a1a;
+  --ifm-background-color: #fff;
+  --ifm-background-surface-color: #fff;
+  --ifm-color-emphasis-100: #f0f0f0;
+  --ifm-color-emphasis-200: #e0e0e0;
+  --ifm-color-emphasis-300: #c0c0c0;
+  --ifm-heading-color: #000;
+}
+
+/* --- Accessibility: High Contrast mode (dark) --- */
+
+[data-theme='dark'][data-a11y-mode='high-contrast'] {
+  --ifm-color-primary: #80e8f8;
+  --ifm-color-primary-dark: #60e0f4;
+  --ifm-font-color-base: #fff;
+  --ifm-font-color-secondary: #eee;
+  --ifm-background-color: #000;
+  --ifm-background-surface-color: #0a0a0a;
+  --ifm-color-emphasis-100: #1a1a1a;
+  --ifm-color-emphasis-200: #2a2a2a;
+  --ifm-color-emphasis-300: #444;
+  --ifm-color-emphasis-600: #ccc;
+  --ifm-color-emphasis-700: #eee;
+  --ifm-heading-color: #fff;
+}
+
+/* --- Accessibility: Toolbar button overrides for high contrast --- */
+
+[data-a11y-mode='high-contrast'] [role='toolbar'] button {
+  color: #000;
+  border-color: #999;
+}
+
+[data-theme='dark'][data-a11y-mode='high-contrast'] [role='toolbar'] button {
+  color: #fff;
+  border-color: #666;
+}
+
+/* --- Accessibility: Dyslexia Friendly mode --- */
+
+html[data-a11y-mode='dyslexia'] {
+  font-family: 'OpenDyslexic', 'Comic Sans MS', cursive, sans-serif;
+  line-height: 1.8;
+  letter-spacing: 0.05em;
+  word-spacing: 0.2em;
+}
+
+html[data-a11y-mode='dyslexia'] h1,
+html[data-a11y-mode='dyslexia'] h2,
+html[data-a11y-mode='dyslexia'] h3,
+html[data-a11y-mode='dyslexia'] h4,
+html[data-a11y-mode='dyslexia'] h5,
+html[data-a11y-mode='dyslexia'] h6 {
+  font-family: 'OpenDyslexic', 'Comic Sans MS', cursive, sans-serif;
+}
+
+html[data-a11y-mode='dyslexia'] code,
+html[data-a11y-mode='dyslexia'] pre {
+  font-family: 'OpenDyslexic', monospace;
+}

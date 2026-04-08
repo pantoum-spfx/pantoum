@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PANTOUM — What Claude Code Receives</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1b1b2f;
+      color: #e0e0e0;
+      overflow: hidden;
+    }
+    .slides { display: flex; transition: transform 0.4s ease; height: 100vh; }
+    .slide {
+      min-width: 100vw;
+      height: 100vh;
+      padding: 44px 60px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    h1 { font-size: 42px; margin-bottom: 14px; color: #fff; font-weight: 700; }
+    h2 { font-size: 30px; margin-bottom: 18px; color: #25c2a0; font-weight: 600; }
+    h3 { font-size: 18px; margin-bottom: 10px; color: #25c2a0; font-weight: 600; }
+    p, li { font-size: 17px; line-height: 1.65; margin-bottom: 8px; color: #c4c4d4; }
+    .subtitle { font-size: 20px; color: #8a8aaf; margin-bottom: 28px; }
+    .accent { color: #25c2a0; }
+    .dim { color: #9595b2; }
+    .blue { color: #5b9aef; }
+    .warn { color: #f5a623; }
+    .purple { color: #c792ea; }
+    .mono { font-family: "JetBrains Mono", "Fira Code", monospace; }
+
+    /* Two-column */
+    .two-col { display: flex; gap: 28px; align-items: flex-start; }
+    .two-col > div { flex: 1; }
+
+    /* Flow elements */
+    .flow-v { display: flex; flex-direction: column; gap: 0; align-items: center; }
+    .flow-h { display: flex; align-items: center; gap: 10px; justify-content: center; }
+    .flow-box {
+      background: #252545;
+      border: 1px solid #3a3a5c;
+      border-radius: 10px;
+      padding: 12px 20px;
+      text-align: center;
+      font-size: 14px;
+      color: #e0e0e0;
+      min-width: 150px;
+    }
+    .flow-box.ai {
+      border-color: #25c2a0;
+      background: #1a2e2a;
+    }
+    .flow-box.error {
+      border-color: #e25555;
+      background: #2a1a1a;
+    }
+    .flow-box.ok {
+      border-color: #4ade80;
+      background: #1a2a1e;
+    }
+    .flow-box strong { display: block; color: #fff; margin-bottom: 2px; }
+    .flow-box small { display: block; font-size: 12px; color: #8a8aaf; margin-top: 3px; }
+    .arrow-d { color: #7a7a9f; font-size: 18px; text-align: center; padding: 3px 0; line-height: 1; }
+    .arrow-r { color: #7a7a9f; font-size: 18px; }
+
+    /* Points */
+    .point-cards { display: flex; gap: 16px; margin: 14px 0; flex-wrap: wrap; }
+    .point-card {
+      background: #1a2e2a;
+      border: 1px solid #25c2a0;
+      border-radius: 10px;
+      padding: 16px 20px;
+      flex: 1;
+      min-width: 200px;
+    }
+    .point-card .num { font-size: 12px; color: #25c2a0; font-weight: 600; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .point-card .title { font-size: 15px; color: #fff; font-weight: 600; margin-bottom: 5px; }
+    .point-card .desc { font-size: 13px; color: #8a8aaf; line-height: 1.5; }
+
+    /* Tool grid */
+    .tool-grid { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+    .tool-chip {
+      display: flex; align-items: center; gap: 6px;
+      background: #252545;
+      border: 1px solid #3a3a5c;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+    }
+    .tool-chip .icon { font-size: 16px; }
+    .tool-chip .name { color: #fff; font-weight: 600; }
+
+    /* File tree */
+    .file-tree {
+      background: #1a1a2e;
+      padding: 14px 18px;
+      border-radius: 10px;
+      font-family: "JetBrains Mono", "Fira Code", monospace;
+      font-size: 13px;
+      line-height: 1.8;
+      color: #c4c4d4;
+      border: 1px solid #2d2d44;
+    }
+    .file-tree .always { color: #25c2a0; }
+    .file-tree .conditional { color: #5b9aef; }
+    .file-tree .dynamic { color: #c792ea; }
+    .file-tree .label {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-left: 8px;
+      font-weight: 600;
+    }
+    .file-tree .label.l-always { background: #1a2e2a; color: #25c2a0; border: 1px solid #25c2a0; }
+    .file-tree .label.l-cond { background: #1a2440; color: #5b9aef; border: 1px solid #5b9aef; }
+    .file-tree .label.l-dyn { background: #2a1a30; color: #c792ea; border: 1px solid #c792ea; }
+
+    /* Constraint cards */
+    .constraint-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+    .constraint-card {
+      background: #252545;
+      border-radius: 10px;
+      padding: 14px 18px;
+      border-left: 3px solid;
+    }
+    .constraint-card.forbidden { border-left-color: #e25555; }
+    .constraint-card.rule { border-left-color: #f5a623; }
+    .constraint-card.version { border-left-color: #5b9aef; }
+    .constraint-card.approach { border-left-color: #25c2a0; }
+    .constraint-card .ctitle { font-size: 14px; color: #fff; font-weight: 600; margin-bottom: 4px; }
+    .constraint-card .cdesc { font-size: 13px; color: #8a8aaf; line-height: 1.5; }
+
+    /* Code block */
+    .code-block {
+      background: #1a1a2e;
+      padding: 14px 18px;
+      border-radius: 10px;
+      font-family: "JetBrains Mono", "Fira Code", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #c4c4d4;
+      border: 1px solid #2d2d44;
+      overflow-x: auto;
+    }
+
+    /* Callout */
+    .callout {
+      background: #1a2e2a;
+      border: 1px solid #25c2a0;
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin: 12px 0;
+    }
+    .callout .clabel { font-size: 14px; color: #25c2a0; font-weight: 600; margin-bottom: 4px; }
+    .callout .ctext { font-size: 13px; color: #c4c4d4; line-height: 1.5; }
+
+    /* Navigation */
+    .progress { position: fixed; bottom: 0; left: 0; height: 3px; background: #25c2a0; transition: width 0.3s; z-index: 100; }
+    .nav { position: fixed; bottom: 16px; right: 20px; display: flex; gap: 6px; z-index: 100; }
+    .nav button {
+      background: #252545; border: 1px solid #3a3a5c; color: #c4c4d4;
+      padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; transition: background 0.2s;
+    }
+    .nav button:hover { background: #3a3a5c; color: #fff; }
+    .slide-number { position: fixed; bottom: 20px; left: 20px; color: #8585a8; font-size: 13px; z-index: 100; }
+    .hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: #8585a8; font-size: 12px; z-index: 100; }
+    .nav button:focus-visible { outline: 2px solid #25c2a0; outline-offset: 2px; }
+    .back-link {
+      position: fixed; top: 16px; left: 20px;
+      color: #c4c4d4; background: rgba(37,37,69,0.85);
+      border: 1px solid #3a3a5c; padding: 6px 14px;
+      border-radius: 6px; font-size: 13px; text-decoration: none;
+      z-index: 100; transition: background 0.2s, color 0.2s;
+    }
+    .back-link:hover { background: #3a3a5c; color: #fff; text-decoration: none; }
+    .back-link:focus-visible { outline: 2px solid #25c2a0; outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) { .slides { transition: none; } }
+  </style>
+</head>
+<body>
+  <a class="back-link" href="/pantoum/" target="_top">&larr; Back to PANTOUM</a>
+  <div class="slides" id="slides" role="main" aria-label="What Claude Code Receives — Presentation">
+
+    <!-- SLIDE 1: Title -->
+    <div class="slide">
+      <h1>What Claude Code Receives</h1>
+      <p class="subtitle">How PANTOUM builds context for AI-powered error fixing</p>
+      <p style="margin-top: 16px;">
+        Every time Claude Code is invoked to fix an error, PANTOUM constructs a structured prompt
+        with three components &mdash; giving Claude Code the full picture it needs to produce targeted, safe fixes.
+      </p>
+      <div class="point-cards" style="margin-top: 28px;">
+        <div class="point-card">
+          <div class="num">Component 1</div>
+          <div class="title">Build Output</div>
+          <div class="desc">Complete, unfiltered stderr + stdout from the build command &mdash; exactly what a developer would see</div>
+        </div>
+        <div class="point-card">
+          <div class="num">Component 2</div>
+          <div class="title">Context Files</div>
+          <div class="desc">Automatically gathered based on error type: package.json, tsconfig, SPFx configs, and error-referenced source files</div>
+        </div>
+        <div class="point-card">
+          <div class="num">Component 3</div>
+          <div class="title">Constraints &amp; Guardrails</div>
+          <div class="desc">Version restrictions, forbidden commands, approach instructions, and SPFx-specific rules</div>
+        </div>
+      </div>
+      <p style="margin-top: 20px; font-size: 14px; color: #8585a8;">Use arrow keys or buttons to navigate</p>
+    </div>
+
+    <!-- SLIDE 2: Build Output Capture -->
+    <div class="slide">
+      <h2>Build Output Capture</h2>
+      <p style="margin-bottom: 14px;">PANTOUM captures the <strong>complete, unfiltered</strong> output from the build command and sends it directly to Claude Code.</p>
+      <div class="two-col">
+        <div>
+          <h3>Capture Flow</h3>
+          <div class="flow-v">
+            <div class="flow-box" style="width: 280px;">
+              <strong>npm run build</strong>
+              <small>Execute build in the SPFx solution directory</small>
+            </div>
+            <div class="arrow-d" aria-hidden="true">&#9660;</div>
+            <div class="flow-box error" style="width: 280px;">
+              <strong>Build Fails</strong>
+              <small>Exit code &ne; 0</small>
+            </div>
+            <div class="arrow-d" aria-hidden="true">&#9660;</div>
+            <div class="flow-h" style="gap: 14px;">
+              <div class="flow-box" style="min-width: 120px; padding: 10px 14px;">
+                <strong style="font-size:13px;">stderr</strong>
+                <small>Error messages</small>
+              </div>
+              <span class="dim" style="font-size: 18px;">+</span>
+              <div class="flow-box" style="min-width: 120px; padding: 10px 14px;">
+                <strong style="font-size:13px;">stdout</strong>
+                <small>Build log</small>
+              </div>
+            </div>
+            <div class="arrow-d" aria-hidden="true">&#9660;</div>
+            <div class="flow-box ai" style="width: 280px;">
+              <strong>Combined &amp; Injected</strong>
+              <small>Full output sent to Claude Code as-is</small>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>What Claude Code Sees</h3>
+          <div class="code-block" style="font-size: 12px;">
+<span style="color:#25c2a0;">BUILD OUTPUT:</span>
+<span style="color:#8a8aaf;">```</span>
+<span style="color:#e25555;">Error - [typescript]</span> src/webparts/MyWebPart.ts(42,5):
+  error TS2564: Property 'context' has no initializer
+  and is not definitely assigned in the constructor.
+
+<span style="color:#e25555;">Error - [typescript]</span> src/services/DataService.ts(18,3):
+  error TS2532: Object is possibly 'undefined'.
+
+<span style="color:#f5a623;">Warning - [eslint]</span> src/utils/helpers.ts(7,1):
+  '@typescript-eslint/no-explicit-any'
+
+<span style="color:#8a8aaf;">--- STDOUT ---</span>
+<span style="color:#c4c4d4;">Starting build...</span>
+<span style="color:#c4c4d4;">Heft build failed with 2 error(s).</span>
+<span style="color:#8a8aaf;">```</span>
+          </div>
+          <div class="callout" style="margin-top: 14px;">
+            <div class="clabel">Why unfiltered?</div>
+            <div class="ctext">
+              Claude Code needs the complete picture &mdash; surrounding context,
+              warning patterns, and build metadata all contribute to accurate root cause analysis.
+              Filtering would lose critical information.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 3: Context File Selection -->
+    <div class="slide">
+      <h2>Context File Selection</h2>
+      <p style="margin-bottom: 14px;">PANTOUM automatically gathers relevant files and lists them in the prompt, so Claude Code knows where to look.</p>
+      <div class="two-col">
+        <div>
+          <h3>Selection Logic</h3>
+          <div class="file-tree">
+<span class="always">package.json</span> <span class="label l-always">always</span>
+<span class="conditional">tsconfig.json</span> <span class="label l-cond">if TS errors</span>
+<span class="always">.yo-rc.json</span> <span class="label l-always">SPFx config</span>
+<span class="always">config/package-solution.json</span> <span class="label l-always">SPFx config</span>
+<span class="always">config/serve.json</span> <span class="label l-always">SPFx config</span>
+<span class="conditional">config/heft.json</span> <span class="label l-cond">if exists</span>
+<span class="conditional">config/rig.json</span> <span class="label l-cond">if exists</span>
+<span class="dynamic">src/webparts/MyWebPart.ts</span> <span class="label l-dyn">from errors</span>
+<span class="dynamic">src/services/DataService.ts</span> <span class="label l-dyn">from errors</span>
+          </div>
+          <div style="margin-top: 14px; display: flex; gap: 12px; flex-wrap: wrap;">
+            <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+              <span style="display:inline-block; width:10px; height:10px; border-radius:3px; background:#25c2a0;"></span>
+              <span style="color:#8a8aaf;">Always included</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+              <span style="display:inline-block; width:10px; height:10px; border-radius:3px; background:#5b9aef;"></span>
+              <span style="color:#8a8aaf;">Conditional on error type</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+              <span style="display:inline-block; width:10px; height:10px; border-radius:3px; background:#c792ea;"></span>
+              <span style="color:#8a8aaf;">Extracted from error paths</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>In the Prompt</h3>
+          <div class="code-block" style="font-size: 12px;">
+<span style="color:#25c2a0;">AVAILABLE FILES:</span>
+<span style="color:#c4c4d4;">- package.json</span>
+<span style="color:#c4c4d4;">- tsconfig.json</span>
+<span style="color:#c4c4d4;">- .yo-rc.json</span>
+<span style="color:#c4c4d4;">- config/package-solution.json</span>
+<span style="color:#c4c4d4;">- config/heft.json</span>
+<span style="color:#c4c4d4;">- src/webparts/MyWebPart.ts</span>
+<span style="color:#c4c4d4;">- src/services/DataService.ts</span>
+          </div>
+          <h3 style="margin-top: 16px;">How Files Are Discovered</h3>
+          <p style="font-size: 14px;">
+            Source files are extracted from error output using path pattern matching.
+            If the build says <span class="mono" style="font-size:12px;">src/webparts/MyWebPart.ts(42,5): error TS2564</span>,
+            PANTOUM extracts <span class="mono" style="font-size:12px;">src/webparts/MyWebPart.ts</span>
+            and includes it in the file list.
+          </p>
+          <p style="font-size: 14px; margin-top: 8px;">
+            Claude Code can also <strong>discover additional files</strong> at runtime using the
+            <span class="accent">Read</span> and <span class="accent">Grep</span> tools &mdash;
+            the file list is a starting point, not a boundary.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 4: Constraints and Guardrails -->
+    <div class="slide">
+      <h2>Constraints &amp; Guardrails</h2>
+      <p style="margin-bottom: 14px;">Every prompt includes explicit rules and instructions to keep Claude Code safe and focused.</p>
+      <div class="constraint-grid">
+        <div class="constraint-card version">
+          <div class="ctitle">Version Restrictions</div>
+          <div class="cdesc">
+            Target SPFx version is specified. Claude Code must not modify
+            <span class="mono" style="font-size:12px;">.yo-rc.json</span> or
+            <span class="mono" style="font-size:12px;">@microsoft/*</span> package versions &mdash;
+            they have already been set correctly by the deterministic patches.
+          </div>
+        </div>
+        <div class="constraint-card forbidden">
+          <div class="ctitle">Forbidden Commands</div>
+          <div class="cdesc">
+            Explicit blocklist: never run <span class="mono" style="font-size:12px;">heft eject-webpack</span>
+            or any command with "eject". Never delete config files.
+            Never downgrade dependency versions.
+          </div>
+        </div>
+        <div class="constraint-card rule">
+          <div class="ctitle">Preserve Intent</div>
+          <div class="cdesc">
+            "This code was working before the upgrade. Fix for compatibility, not broken logic."
+            Don't loosen TypeScript settings. Don't simplify build scripts.
+            Don't create custom webpack configurations.
+          </div>
+        </div>
+        <div class="constraint-card approach">
+          <div class="ctitle">Approach Instructions</div>
+          <div class="cdesc">
+            1. Read ALL files mentioned in errors first<br>
+            2. Plan ALL fixes based on what you read<br>
+            3. Apply ALL fixes in one batch (Edit/MultiEdit)<br>
+            4. Run build ONCE after all fixes applied
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 20px; margin-top: 16px; align-items: flex-start;">
+        <div class="callout" style="flex: 1;">
+          <div class="clabel">Structured Prompts</div>
+          <div class="ctext">Carefully engineered prompts with explicit constraints maximize consistency across runs.</div>
+        </div>
+        <div style="flex: 1;">
+          <h3>Tool Allowlist</h3>
+          <div class="tool-grid">
+            <div class="tool-chip"><span class="icon" aria-hidden="true">&#128214;</span><span class="name">Read</span></div>
+            <div class="tool-chip"><span class="icon" aria-hidden="true">&#9999;&#65039;</span><span class="name">Edit</span></div>
+            <div class="tool-chip"><span class="icon" aria-hidden="true">&#9999;&#65039;</span><span class="name">MultiEdit</span></div>
+            <div class="tool-chip"><span class="icon" aria-hidden="true">&#128269;</span><span class="name">Grep</span></div>
+            <div class="tool-chip"><span class="icon" aria-hidden="true">&#128187;</span><span class="name">Bash</span></div>
+          </div>
+          <p style="font-size: 13px; color: #8a8aaf; margin-top: 8px;">
+            No web browsing &mdash; Claude Code operates exclusively on local files.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 5: Migration Context -->
+    <div class="slide">
+      <h2>Migration Prompts</h2>
+      <p style="margin-bottom: 14px;">For package migrations, prompts are loaded from template files in <span class="mono">src/templates/*.md</span>.</p>
+      <div class="two-col">
+        <div>
+          <h3>How It Works</h3>
+          <div class="flow-v" style="align-items: stretch;">
+            <div class="flow-box" style="text-align: left; padding: 14px 18px;">
+              <strong style="margin-bottom: 4px;">1. aiContext in pantoum.patches.yml</strong>
+              <small style="text-align: left;">
+                The <span style="color:#c4c4d4;" class="mono">template</span> field specifies which
+                template file to load (e.g. <span style="color:#c4c4d4;" class="mono">pnp-v4-migration</span>).
+              </small>
+            </div>
+            <div class="arrow-d" aria-hidden="true">&#9660;</div>
+            <div class="flow-box ai" style="text-align: left; padding: 14px 18px;">
+              <strong style="margin-bottom: 4px;">2. Template file loaded</strong>
+              <small style="text-align: left;">
+                Markdown template from <span style="color:#c4c4d4;" class="mono">src/templates/*.md</span>
+                with variable substitution. All migration knowledge is self-contained.
+              </small>
+            </div>
+            <div class="arrow-d" aria-hidden="true">&#9660;</div>
+            <div class="flow-box" style="text-align: left; padding: 14px 18px;">
+              <strong style="margin-bottom: 4px;">3. Prompt assembled</strong>
+              <small style="text-align: left;">
+                Preamble + template content = complete prompt sent to Claude Code.
+              </small>
+            </div>
+          </div>
+          <h3 style="margin-top: 16px;">Template Variables</h3>
+          <div class="code-block" style="font-size: 12px;">
+<span style="color:#c792ea;">{{packageName}}</span>  <span style="color:#8a8aaf;">&rarr; @pnp/sp</span>
+<span style="color:#c792ea;">{{fromVersion}}</span>  <span style="color:#8a8aaf;">&rarr; 3.15.0</span>
+<span style="color:#c792ea;">{{toVersion}}</span>    <span style="color:#8a8aaf;">&rarr; 4.17.0</span>
+<span style="color:#c792ea;">{{isRemoval}}</span>    <span style="color:#8a8aaf;">&rarr; false</span>
+          </div>
+        </div>
+        <div>
+          <h3>Template Content</h3>
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+            <div style="background:#252545; border-radius:8px; padding:12px 16px; border-left: 3px solid #5b9aef;">
+              <div style="font-size:14px; color:#fff; font-weight:600;">Self-Contained Instructions</div>
+              <div style="font-size:13px; color:#8a8aaf;">All migration knowledge is embedded in the template file: breaking changes, code patterns, verification steps, and edge cases</div>
+            </div>
+          </div>
+          <h3>Built-in Templates</h3>
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <div style="background:#252545; border-radius:6px; padding:6px 14px; font-size:13px;">
+              <span class="accent mono">pnp-v4-migration.md</span> <span class="dim">&mdash; PnP JS &rarr; v4</span>
+            </div>
+            <div style="background:#252545; border-radius:6px; padding:6px 14px; font-size:13px;">
+              <span class="accent mono">mgt-migration.md</span> <span class="dim">&mdash; MGT deprecation</span>
+            </div>
+            <div style="background:#252545; border-radius:6px; padding:6px 14px; font-size:13px;">
+              <span class="accent mono">react-17-migration.md</span> <span class="dim">&mdash; React lifecycle</span>
+            </div>
+            <div style="background:#252545; border-radius:6px; padding:6px 14px; font-size:13px;">
+              <span class="accent mono">fluent-ui-migration.md</span> <span class="dim">&mdash; Fluent UI v7 &rarr; v8</span>
+            </div>
+            <div style="background:#252545; border-radius:6px; padding:6px 14px; font-size:13px;">
+              <span class="accent mono">gulp-to-heft-migration.md</span> <span class="dim">&mdash; Gulp &rarr; Heft</span>
+            </div>
+            <div style="background:#252545; border-radius:6px; padding:6px 14px; font-size:13px;">
+              <span class="accent mono">gulpfile-custom-migration.md</span> <span class="dim">&mdash; Gulp + env injection</span>
+            </div>
+            <div style="background:#252545; border-radius:6px; padding:6px 14px; font-size:13px;">
+              <span class="accent mono">scss-declaration-order-migration.md</span> <span class="dim">&mdash; SCSS fixes</span>
+            </div>
+            <div style="background:#252545; border-radius:6px; padding:6px 14px; font-size:13px;">
+              <span class="accent mono">generic-migration.md</span> <span class="dim">&mdash; Any other package</span>
+            </div>
+          </div>
+          <p style="font-size: 13px; color: #8a8aaf; margin-top: 12px;">
+            See the <a href="/pantoum/docs/guides/extensibility" style="color: #25c2a0;">Extensibility guide</a> for creating custom migration contexts.
+          </p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="progress" id="progress"></div>
+  <div class="slide-number" id="slideNum" aria-live="polite" role="status">Slide 1 of 5</div>
+  <div class="hint" aria-hidden="true">Arrow keys to navigate</div>
+  <nav class="nav" aria-label="Slide navigation">
+    <button onclick="prev()">&larr; Prev</button>
+    <button onclick="next()">Next &rarr;</button>
+  </nav>
+
+  <script>
+    let current = 0;
+    const slides = document.querySelectorAll('.slide');
+    const total = slides.length;
+
+    function show(n) {
+      current = Math.max(0, Math.min(n, total - 1));
+      document.getElementById('slides').style.transform = 'translateX(-' + (current * 100) + 'vw)';
+      document.getElementById('progress').style.width = ((current + 1) / total * 100) + '%';
+      document.getElementById('slideNum').textContent = 'Slide ' + (current + 1) + ' of ' + total;
+    }
+
+    function next() { show(current + 1); }
+    function prev() { show(current - 1); }
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); prev(); }
+      if (e.key === 'Home') { e.preventDefault(); show(0); }
+      if (e.key === 'End') { e.preventDefault(); show(total - 1); }
+    });
+
+    show(0);
+  </script>
+</body>
+</html>

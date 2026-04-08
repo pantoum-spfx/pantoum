@@ -1,0 +1,46 @@
+{
+  "name": "@pantoum-spfx/webapp",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:app\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:app": "vite",
+    "build": "npm run build:app && npm run build:server",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build:app": "vite build",
+    "start": "NODE_ENV=production node dist/server/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fluentui/react-components": "^9.56.7",
+    "@fluentui/react-icons": "^2.0.275",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "js-yaml": "^4.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.6.1",
+    "remark-gfm": "^4.0.1",
+    "uuid": "^10.0.0",
+    "ws": "^8.18.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.15.29",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.5.2",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.3.5"
+  }
+}
