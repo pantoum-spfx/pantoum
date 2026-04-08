@@ -136,4 +136,4 @@ Pick whichever fits your workflow — same engine underneath:
 
 ## Supported Runtime
 
-This public release supports only the Claude runtime. The settings contract is already future-friendly, but Pantoum does not yet claim public Codex, OpenCode, or Copilot support. `agent_provider` is fixed to `claude`, and `agent_model` supports `sonnet` and `opus`.
+PANTOUM currently runs on Claude only (via Claude Code subscription or `ANTHROPIC_API_KEY`). `agent_provider` is fixed to `claude`, and `agent_model` supports `sonnet` and `opus`.
