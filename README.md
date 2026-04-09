@@ -7,6 +7,8 @@ PANTOUM handles the patches, the package migrations, and the build fixes. You re
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Node.js 22+](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
 
+![PANTOUM Studio upgrading an SPFx solution](assets/pantoum_upgrade.gif)
+
 > Used on the PuntoBello SPFx suite · MIT open source · Every patch and prompt is editable
 
 ## Why PANTOUM?
