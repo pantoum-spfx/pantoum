@@ -206,6 +206,29 @@ function scanDir(dir: string, depth: number, maxDepth: number, results: Solution
       }
     }
 
+    // Fallback: detect via package.json SPFx dependencies (mirrors core solutionScanner.ts)
+    if (hasPackageJson) {
+      const pkgPath = path.join(dir, 'package.json');
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+        const hasSpfxDep = Object.keys(deps || {}).some(d => d.startsWith('@microsoft/sp-'));
+        if (hasSpfxDep) {
+          const currentVersion = detectCurrentVersion(dir, {});
+          results.push({
+            name: path.basename(dir),
+            path: dir,
+            currentVersion,
+            hasYoRc: false,
+            hasPackageJson: true,
+          });
+          return; // Don't scan subdirectories of a solution
+        }
+      } catch {
+        // Invalid package.json, skip
+      }
+    }
+
     // Recurse into subdirectories (skip common non-solution dirs)
     const skipDirs = new Set(['node_modules', '.git', 'dist', 'lib', 'temp', '.heft', 'coverage']);
     for (const entry of entries) {
