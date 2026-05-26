@@ -71,7 +71,7 @@ If you want the `pantoum` command available from any directory (for scripting, C
 ```bash
 npm link
 pantoum doctor
-pantoum --localPath ./my-project --toVersion 1.22.1
+pantoum --localPath ./my-project --toVersion 1.23.0
 ```
 
 PANTOUM isn't published to npm, so `npm link` is the way to expose the local build as a global command. Skip this step if you only plan to use Studio.
@@ -89,7 +89,7 @@ From there:
 The onboarding path is built around a small set of settings in `pantoum.settings.yml`:
 
 ```yaml
-target_version: "1.22.1"
+target_version: "1.23.0"
 agent_provider: "claude"
 agent_model: "sonnet"
 ai_fix_m365_errors: true

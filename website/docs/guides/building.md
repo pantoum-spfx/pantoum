@@ -14,7 +14,7 @@ description: Build system and development workflow
 npm run dev:link       # Build + update global commands
 npm run webapp        # Test with PANTOUM Studio
 # Or test with CLI:
-pantoum --localPath ./my-project --toVersion 1.22.1
+pantoum --localPath ./my-project --toVersion 1.23.0
 ```
 
 ## Build Commands

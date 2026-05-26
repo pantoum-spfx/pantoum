@@ -98,6 +98,16 @@ describe('validateShellCommand', () => {
     expect(() => validateShellCommand('npx tsc --noEmit')).not.toThrow();
   });
 
+  it('should allow npm pkg set overrides (SPFx 1.23 FN027001)', () => {
+    expect(() => validateShellCommand('npm pkg set overrides.@rushstack/heft=1.2.17')).not.toThrow();
+    expect(() => validateShellCommand('npm pkg set overrides.lodash=4.17.21')).not.toThrow();
+  });
+
+  it('should block npm pkg subcommands other than set overrides', () => {
+    expect(() => validateShellCommand('npm pkg delete overrides.foo')).toThrow('not in allowlist');
+    expect(() => validateShellCommand('npm pkg get overrides')).toThrow('not in allowlist');
+  });
+
   it('should allow gulp build', () => {
     expect(() => validateShellCommand('gulp build')).not.toThrow();
   });

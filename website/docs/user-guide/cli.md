@@ -34,11 +34,11 @@ pantoum doctor
 Run a straightforward upgrade:
 
 ```bash
-pantoum --localPath ./my-spfx-project --toVersion 1.22.1
+pantoum --localPath ./my-spfx-project --toVersion 1.23.0
 
 pantoum \
   --localPath ./my-project \
-  --toVersion 1.22.1 \
+  --toVersion 1.23.0 \
   --aiFixM365Errors true \
   --aiFixBuildErrors true
 ```
@@ -46,7 +46,7 @@ pantoum \
 Use Opus when you expect a harder upgrade:
 
 ```bash
-pantoum --localPath ./my-project --toVersion 1.22.1 --agentModel opus
+pantoum --localPath ./my-project --toVersion 1.23.0 --agentModel opus
 ```
 
 ## Common Flags
@@ -54,7 +54,7 @@ pantoum --localPath ./my-project --toVersion 1.22.1 --agentModel opus
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--localPath` | string | `.` | Path to repository containing SPFx solutions |
-| `--toVersion` | string | `1.22.1` | Target SPFx version |
+| `--toVersion` | string | `1.23.0` | Target SPFx version |
 | `--agentProvider` | string | `claude` | AI runtime for this public release |
 | `--agentModel` | string | `sonnet` | Claude model: `sonnet` or `opus` |
 | `--aiFixM365Errors` | boolean | `true` | Use AI to fix M365 CLI upgrade errors |

@@ -53,7 +53,7 @@ The public release supports these Claude model values:
 Set it via CLI flag or Advanced settings in Studio:
 
 ```bash
-pantoum --localPath ./project --toVersion 1.22.1 --agentModel opus
+pantoum --localPath ./project --toVersion 1.23.0 --agentModel opus
 ```
 
 `agent_provider` is fixed to `claude` in this public release.

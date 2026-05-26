@@ -14,7 +14,7 @@ Pantoum edits source files, configuration, and dependencies in your repository. 
 Always run Pantoum against a local git clone on a dedicated branch.
 
 ```bash
-git checkout -b upgrade/spfx-1.22.1
+git checkout -b upgrade/spfx-1.23.0
 ```
 
 ## Pantoum Only Upgrades

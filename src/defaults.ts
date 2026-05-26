@@ -14,7 +14,7 @@
 // ============================================================================
 
 /** Default target SPFx version */
-export const DEFAULT_TARGET_VERSION = '1.22.1';
+export const DEFAULT_TARGET_VERSION = '1.23.0';
 
 /** Default environment injection strategy for SPFx 1.22+ Heft migration */
 export const DEFAULT_ENV_INJECTION_STRATEGY = 'webpack-patch' as const;
