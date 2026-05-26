@@ -80,6 +80,6 @@ Back in PowerShell:
 cd C:\dev\pantoum\pantoum
 
 # Run upgrade on a test solution
-node dist\cli.js --localPath C:\dev\pantoum_testlast\puntobello-realtimenews --toVersion 1.22.1
+node dist\cli.js --localPath C:\dev\pantoum_testlast\puntobello-realtimenews --toVersion 1.23.0
 ```
 

@@ -71,6 +71,9 @@ export function sanitizePathForPrompt(filePath: string): string {
 // These cover the standard SPFx build toolchain.
 const ALLOWED_COMMAND_PATTERNS: RegExp[] = [
   /^npm\s+(install|ci|run|dedupe|cache|audit|test|start|exec)/,
+  // SPFx 1.23 emits `npm pkg set overrides.@rushstack/heft=<version>` (FN027001).
+  // Match only the `pkg set overrides.<pkg>=<version>` shape — not `npm pkg delete`/`get`.
+  /^npm\s+pkg\s+set\s+overrides\.@?[\w@/.-]+=[\w.-]+$/,
   /^npx\s+/,
   /^node\s+/,
   /^gulp\s+/,

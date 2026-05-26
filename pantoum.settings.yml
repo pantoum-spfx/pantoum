@@ -2,7 +2,7 @@
 # Configure how upgrades are performed
 
 # === Target Configuration ===
-target_version: "1.22.1"
+target_version: "1.23.0"
 excluded_patches: ["FN019002", "FN012019", "FN017001"]
 env_injection_strategy: "webpack-patch"
 

@@ -40,7 +40,7 @@ cd /path/to/pantoum
 
 node dist/cli.js \
   --localPath /path/to/your-spfx-repo \
-  --toVersion 1.22.1 \
+  --toVersion 1.23.0 \
   --onSingleSolutionFail continue \
   --perSolutionReports true \
   --aiFixM365Errors true

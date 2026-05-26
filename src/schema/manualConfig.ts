@@ -180,7 +180,10 @@ interface VersionUpdateConfig {
 export interface PatchFilter {
   id: string;
   description: string;
-  targetPatchId: string;
+  /** Exact instruction ID to target. Exactly one of targetPatchId / targetPatchIdPrefix must be set. */
+  targetPatchId?: string;
+  /** Prefix match — excludes every instruction whose ID starts with this (e.g. "FN025" for the @rushstack ESLint override-rule family). */
+  targetPatchIdPrefix?: string;
   action: "exclude";
   condition: Condition;
 }

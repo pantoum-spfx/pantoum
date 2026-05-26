@@ -45,7 +45,7 @@ When a run fails:
 If you want a smaller first pass, disable extra work:
 
 ```bash
-pantoum --localPath . --toVersion 1.22.1 \
+pantoum --localPath . --toVersion 1.23.0 \
   --aiFixM365Errors false \
   --aiFixBuildErrors false \
   --updateThirdPartyDeps none \

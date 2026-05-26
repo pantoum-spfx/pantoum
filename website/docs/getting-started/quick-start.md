@@ -37,7 +37,7 @@ Everything else can wait until you know you need it.
 Pantoum stores its main settings in `pantoum.settings.yml`:
 
 ```yaml
-target_version: "1.22.1"
+target_version: "1.23.0"
 agent_provider: "claude"
 agent_model: "sonnet"
 ai_fix_m365_errors: true
@@ -85,7 +85,7 @@ See [Reports](/docs/features/reporting) for the output format.
 ```bash
 pantoum \
   --localPath ./my-spfx-project \
-  --toVersion 1.22.1 \
+  --toVersion 1.23.0 \
   --aiFixM365Errors true \
   --aiFixBuildErrors true
 ```
@@ -93,7 +93,7 @@ pantoum \
 If you need a stronger Claude model for a difficult upgrade:
 
 ```bash
-pantoum --localPath ./my-spfx-project --toVersion 1.22.1 --agentModel opus
+pantoum --localPath ./my-spfx-project --toVersion 1.23.0 --agentModel opus
 ```
 
 ## Next Steps

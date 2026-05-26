@@ -303,17 +303,22 @@ manualSteps:
     file: .
     command: npm i -D babel-loader@8.3.0 @babel/plugin-transform-optional-chaining @babel/plugin-transform-nullish-coalescing-operator @babel/plugin-transform-logical-assignment-operators
   # 15) Remove obsolete rush-stack-compiler for Heft projects (all versions)
-  # SPFx 1.22+ uses Heft (@rushstack/heft) which doesn't need rush-stack-compiler
+  # SPFx 1.22+ uses Heft (@rushstack/heft) which doesn't need rush-stack-compiler.
+  # Gate on instructionPresent FN002031 (the upgrade report's "add @rushstack/heft"
+  # instruction) rather than the package being present in package.json: @rushstack/heft
+  # is ADDED by the upgrade, so at patch-generation time it isn't in the original
+  # package.json yet and a packageVersion condition would never match. Leaving
+  # rush-stack-compiler in place drags in its eslint@^8 peer, which collides with
+  # SPFx 1.23's eslint@9.37.0 (ERESOLVE). FN002031 is emitted for every Heft target
+  # (verified present in both 1.22 and 1.23 reports).
   - id: "M000015"
     enabled: true
     title: "Remove rush-stack-compiler-4.7"
     description: "Remove obsolete @microsoft/rush-stack-compiler-4.7 (replaced by Heft)"
     when: post
     condition:
-      type: packageVersion
-      packageName: "@rushstack/heft"
-      comparator: ">="
-      version: "0.0.0"
+      type: instructionPresent
+      instructionId: "FN002031"
     type: removeDependency
     file: package.json
     depType: devDependencies
@@ -325,10 +330,8 @@ manualSteps:
     description: "Remove obsolete @microsoft/rush-stack-compiler-4.5 (replaced by Heft)"
     when: post
     condition:
-      type: packageVersion
-      packageName: "@rushstack/heft"
-      comparator: ">="
-      version: "0.0.0"
+      type: instructionPresent
+      instructionId: "FN002031"
     type: removeDependency
     file: package.json
     depType: devDependencies
@@ -340,10 +343,8 @@ manualSteps:
     description: "Remove obsolete @microsoft/rush-stack-compiler-5.3 (replaced by Heft)"
     when: post
     condition:
-      type: packageVersion
-      packageName: "@rushstack/heft"
-      comparator: ">="
-      version: "0.0.0"
+      type: instructionPresent
+      instructionId: "FN002031"
     type: removeDependency
     file: package.json
     depType: devDependencies
@@ -690,6 +691,25 @@ patchFilters:
     condition:
       type: instructionPresent
       instructionId: "FN015011"
+
+  # SPFx 1.23 migrates ESLint to flat config: FN015016 creates eslint.config.js and
+  # FN015008 deletes .eslintrc.js. The FN025xxx family appends @rushstack ESLint
+  # override rules to .eslintrc.js, which is gone by then → ENOENT. The exact IDs vary
+  # by version jump (1.18.2→1.23 emits FN025002/003; 1.16.1→1.23 emits FN025004/005),
+  # so match the whole family by prefix. The instructionPresent: FN015008 condition is
+  # load-bearing — the prefix only fires when .eslintrc.js is actually being removed,
+  # so it never eats unrelated FN025xxx instructions on non-flat-config upgrades.
+  # A fileAbsent condition does NOT work: .eslintrc.js still exists at patch-GENERATION
+  # time and is only removed during patch APPLICATION.
+  # TODO: translate these rushstack rules into eslint.config.js for full coverage
+  # (currently they are dropped on the 1.23 flat-config path).
+  - id: "FILTER002"
+    description: "Skip the FN025xxx @rushstack ESLint override rules when .eslintrc.js is removed by FN015008 (1.23 flat config)"
+    targetPatchIdPrefix: "FN025"
+    action: exclude
+    condition:
+      type: instructionPresent
+      instructionId: "FN015008"
 
 # ─────────── Version Corrections ───────────
 # Fix invalid versions recommended by M365 CLI

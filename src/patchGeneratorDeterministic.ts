@@ -459,9 +459,24 @@ export async function generatePatchesHybrid(
   // Build set of patch IDs to exclude based on filters
   const filterExcludeIds = new Set<string>();
   for (const filter of patchFilters) {
-    if (filter.action === 'exclude' && conditionMet(filter.condition, solutionDir, conditionContext)) {
-      filterExcludeIds.add(filter.targetPatchId);
+    const hasExact = !!filter.targetPatchId;
+    const hasPrefix = !!filter.targetPatchIdPrefix;
+    if (hasExact === hasPrefix) {
+      throw new Error(`Patch filter ${filter.id} must set exactly one of targetPatchId or targetPatchIdPrefix`);
+    }
+    if (filter.action !== 'exclude' || !conditionMet(filter.condition, solutionDir, conditionContext)) {
+      continue;
+    }
+    if (hasExact) {
+      filterExcludeIds.add(filter.targetPatchId!);
       logger.info(`Patch filter ${filter.id}: excluding ${filter.targetPatchId} — ${filter.description}`);
+    } else {
+      // Prefix match — exclude every instruction whose ID starts with the prefix.
+      const matched = instructionIds.filter((id: string) => id.startsWith(filter.targetPatchIdPrefix!));
+      for (const id of matched) {
+        filterExcludeIds.add(id);
+      }
+      logger.info(`Patch filter ${filter.id}: excluding ${matched.length} patch(es) matching prefix ${filter.targetPatchIdPrefix} [${matched.join(', ')}] — ${filter.description}`);
     }
   }
 
