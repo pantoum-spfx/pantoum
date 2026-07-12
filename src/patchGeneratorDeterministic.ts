@@ -352,6 +352,25 @@ class DeterministicPatchGenerator {
       };
     }
 
+    // Remove/delete instruction → emit a content-matched delete, NOT a line replace.
+    // (Mirrors the remove handling already present in handleJsonResolution.)
+    // Without this, a "Remove scss file import" finding whose resolution is the OLD
+    // import line was turned into an updateTextSnippet that re-wrote the old line.
+    const isRemoval = instruction.description.toLowerCase().includes('remove') ||
+                      instruction.description.toLowerCase().includes('delete');
+    if (isRemoval) {
+      const contentToDelete = instruction.resolution
+        .replace(/\\$/gm, '')   // strip trailing backslash line-continuations
+        .replace(/\\"/g, '"');  // unescape quotes
+      return {
+        ...basePatch,
+        type: 'removeTextSnippet',
+        file: absoluteFile,
+        contentToDelete,
+        resolutionType: instruction.resolutionType
+      };
+    }
+
     // Regular text update
     let patchLines = instruction.resolution.split('\n')
       .map(line => line.replace(/\\$/g, ''));  // remove trailing backslashes

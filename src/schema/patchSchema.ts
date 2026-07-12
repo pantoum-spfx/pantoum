@@ -185,6 +185,12 @@ export type PatchObject = BasePatch & (
     patchLines: string[];          // replacement lines to insert
   }
   | {
+    type: "removeTextSnippet";
+    file: string;
+    contentToDelete: string;       // exact line(s) to remove; matched by content, not line number
+    resolutionType?: string;       // 'scss' | 'text' | 'js' (for logging)
+  }
+  | {
     type: "removeJsonArrayElement";
     file: string;           // e.g. "tsconfig.json"
     // path down into the JSON to find the array:

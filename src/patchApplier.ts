@@ -56,7 +56,15 @@ export async function applyPatches(
   // Count skipped patches
   const skippedPatches: PatchObject[] = [];
 
-  for (const patch of patches) {
+  // Apply content-matched removals (removeTextSnippet) in a FINAL pass so that
+  // line-anchored adds/replaces run first on un-shifted line numbers, then the
+  // removals clean up by content — making the result order-independent.
+  const orderedPatches: PatchObject[] = [
+    ...patches.filter(p => p.type !== 'removeTextSnippet'),
+    ...patches.filter(p => p.type === 'removeTextSnippet'),
+  ];
+
+  for (const patch of orderedPatches) {
     logger.info(`→ Processing patch ${patch.id}: ${patch.title || patch.description || 'No description'} (type=${patch.type})`);
     let didModify = false;
     let success = false;
@@ -268,6 +276,42 @@ export async function applyPatches(
           const newText = JSON.stringify(json, null, 2) + '\n';
           fs.writeFileSync(resolvedFile, newText, DEFAULTS.ENCODING);
           didModify = true;
+          success = true;
+          break;
+        }
+        case 'removeTextSnippet': {
+          // Content-matched line deletion for M365 "remove" findings.
+          // Runs in the final pass (see ordering above) so adds/replaces have
+          // already executed on un-shifted line numbers.
+          const resolvedFile = validateAndResolvePath(patch.file, solutionPath);
+          const text = fs.readFileSync(resolvedFile, DEFAULTS.ENCODING);
+          const lines = text.split('\n');
+          const norm = (l: string): string => {
+            const t = l.trim();
+            if (t.length === 0) return '';
+            return t.endsWith(';') ? t : t + ';';
+          };
+          const targets = new Set(
+            patch.contentToDelete.split('\n').map(norm).filter(t => t.length > 0)
+          );
+          const kept = targets.size === 0 ? lines : lines.filter(l => !targets.has(norm(l)));
+          const removedCount = lines.length - kept.length;
+          fs.writeFileSync(resolvedFile, kept.join('\n'), DEFAULTS.ENCODING);
+          // Post-condition: none of the targeted lines may remain. Fail loud
+          // instead of silently reporting success (the original bug).
+          const stillPresent = fs.readFileSync(resolvedFile, DEFAULTS.ENCODING)
+            .split('\n').some(l => targets.has(norm(l)));
+          if (stillPresent) {
+            throw new Error(
+              `removeTextSnippet: target content still present in ${resolvedFile} after removal`
+            );
+          }
+          if (removedCount > 0) {
+            didModify = true;
+            logger.info(`✔ removeTextSnippet removed ${removedCount} line(s) from ${path.basename(resolvedFile)}`);
+          } else {
+            logger.info(`— removeTextSnippet: target already absent in ${path.basename(resolvedFile)}`);
+          }
           success = true;
           break;
         }
