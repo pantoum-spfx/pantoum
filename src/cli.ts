@@ -48,6 +48,7 @@ interface CliArgs {
   aiFixM365Errors?: boolean;
   aiFixBuildErrors?: boolean;
   aiFixThirdPartyErrors?: boolean;
+  aiFixEslintWarnings?: boolean;
   aiFixEslintProperly?: boolean;
   aiFixTypeScriptWarnings?: boolean;
   agentProvider?: 'claude';
@@ -87,6 +88,7 @@ function cliArgsToOverrides(argv: CliArgs): Partial<PantoumSettingsFlat> {
   if (argv.aiFixM365Errors !== undefined) overrides.ai_fix_m365_errors = argv.aiFixM365Errors;
   if (argv.aiFixBuildErrors !== undefined) overrides.ai_fix_build_errors = argv.aiFixBuildErrors;
   if (argv.aiFixThirdPartyErrors !== undefined) overrides.ai_fix_third_party_errors = argv.aiFixThirdPartyErrors;
+  if (argv.aiFixEslintWarnings !== undefined) overrides.ai_fix_eslint_warnings = argv.aiFixEslintWarnings;
   if (argv.aiFixEslintProperly !== undefined) overrides.ai_fix_eslint_properly = argv.aiFixEslintProperly;
   if (argv.aiFixTypeScriptWarnings !== undefined) overrides.ai_fix_typescript_warnings = argv.aiFixTypeScriptWarnings;
   if (argv.aiMaxRetries !== undefined) overrides.ai_max_retries = argv.aiMaxRetries;
@@ -168,6 +170,7 @@ async function runUpgrade(argv: CliArgs) {
       updateThirdPartyDevDeps: settings.update_dev_deps as 'none' | 'patch',
       cleanInstallAfterDepUpdate: settings.clean_install_after_updates,
       aiFixThirdPartyErrors: settings.ai_fix_third_party_errors,
+      aiFixEslintWarnings: settings.ai_fix_eslint_warnings,
       aiFixEslintProperly: settings.ai_fix_eslint_properly,
       aiFixTypeScriptWarnings: settings.ai_fix_typescript_warnings,
       aiMaxRetries: settings.ai_max_retries,
@@ -253,9 +256,13 @@ async function main() {
             type: 'boolean',
             description: `Use AI (Claude) to fix breaking changes from third-party updates (default: ${AI_DEFAULTS.FIX_THIRD_PARTY_ERRORS})`,
           })
+          .option('aiFixEslintWarnings', {
+            type: 'boolean',
+            description: `Whether ESLint warnings trigger AI cleanup at all; author rule choices are always preserved regardless (default: ${AI_DEFAULTS.FIX_ESLINT_WARNINGS})`,
+          })
           .option('aiFixEslintProperly', {
             type: 'boolean',
-            description: `AI fixes ESLint by fixing code (true) vs adding disable comments (false) (default: ${AI_DEFAULTS.FIX_ESLINT_PROPERLY})`,
+            description: `When fixing ESLint, fix code (true) vs add disable comments (false) (default: ${AI_DEFAULTS.FIX_ESLINT_PROPERLY})`,
           })
           .option('aiFixTypeScriptWarnings', {
             type: 'boolean',

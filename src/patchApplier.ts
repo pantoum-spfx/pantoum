@@ -56,12 +56,14 @@ export async function applyPatches(
   // Count skipped patches
   const skippedPatches: PatchObject[] = [];
 
-  // Apply content-matched removals (removeTextSnippet) in a FINAL pass so that
-  // line-anchored adds/replaces run first on un-shifted line numbers, then the
-  // removals clean up by content — making the result order-independent.
+  // Apply content-matched removals (removeTextSnippet) and eslint-rule preservation
+  // (preserveEslintRules) in a FINAL pass: line-anchored adds/replaces run first on
+  // un-shifted line numbers, and preserveEslintRules must run after the M365 CLI
+  // finding that CREATES eslint.config.js — making the result order-independent.
+  const isFinalPass = (t: string) => t === 'removeTextSnippet' || t === 'preserveEslintRules';
   const orderedPatches: PatchObject[] = [
-    ...patches.filter(p => p.type !== 'removeTextSnippet'),
-    ...patches.filter(p => p.type === 'removeTextSnippet'),
+    ...patches.filter(p => !isFinalPass(p.type)),
+    ...patches.filter(p => isFinalPass(p.type)),
   ];
 
   for (const patch of orderedPatches) {
@@ -312,6 +314,43 @@ export async function applyPatches(
           } else {
             logger.info(`— removeTextSnippet: target already absent in ${path.basename(resolvedFile)}`);
           }
+          success = true;
+          break;
+        }
+        case 'preserveEslintRules': {
+          // The 1.23 flat-config migration deletes the author's .eslintrc.js and
+          // generates a stock STRICT eslint.config.js, dropping the author's
+          // deliberate rule choices (e.g. "@typescript-eslint/no-explicit-any": "off").
+          // Re-inject those rules as a final flat-config entry (last wins), so the
+          // upgrade is faithful to the author's lint policy. Runs in the final pass
+          // so eslint.config.js already exists.
+          const resolvedFile = validateAndResolvePath(patch.file, solutionPath);
+          if (!fs.existsSync(resolvedFile)) {
+            logger.warn(`— preserveEslintRules: ${path.basename(resolvedFile)} not found; skipping`);
+            success = true;
+            break;
+          }
+          const src = fs.readFileSync(resolvedFile, DEFAULTS.ENCODING);
+          const MARKER = '/* pantoum: preserved author eslint rules */';
+          if (src.includes(MARKER)) {
+            logger.info(`— preserveEslintRules: rules already preserved in ${path.basename(resolvedFile)}`);
+            success = true;
+            break;
+          }
+          // Insert a new config object before the LAST ']' that closes the
+          // module.exports array. Normalise any trailing comma so we emit exactly one.
+          const lastBracket = src.lastIndexOf(']');
+          if (lastBracket === -1) {
+            logger.warn(`— preserveEslintRules: no array literal in ${path.basename(resolvedFile)}; skipping`);
+            success = true;
+            break;
+          }
+          const head = src.slice(0, lastBracket).replace(/,\s*$/, '');
+          const tail = src.slice(lastBracket);
+          const entry = `,\n  ${MARKER}\n  {\n    rules: {\n${patch.rulesBlock}\n    }\n  }\n`;
+          fs.writeFileSync(resolvedFile, head + entry + tail, DEFAULTS.ENCODING);
+          didModify = true;
+          logger.info(`✔ preserveEslintRules re-applied author rules to ${path.basename(resolvedFile)}`);
           success = true;
           break;
         }

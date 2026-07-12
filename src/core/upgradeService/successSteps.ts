@@ -130,6 +130,29 @@ function hasEslintWarnings(output: string): boolean {
 }
 
 /**
+ * When a build "failure" was forced by a warnings check, a retry only counts as
+ * fixed when the warnings are actually gone — a raw exit code 0 is not enough
+ * (warnings never fail the build, so exit 0 with all warnings intact would
+ * otherwise pass verification untouched).
+ * Mutates retryResult.exitCode back to 1 when the forcing condition persists.
+ */
+function reapplyWarningForcing(
+  retryResult: { exitCode?: number; stdout?: string; stderr?: string },
+  forcedCleanup: 'typescript' | 'sass' | 'eslint' | null
+): void {
+  if (!forcedCleanup || retryResult.exitCode !== 0) return;
+  const retryOutput = (retryResult.stdout || '') + (retryResult.stderr || '');
+  const stillDirty =
+    (forcedCleanup === 'typescript' && hasTypeScriptWarnings(retryOutput)) ||
+    (forcedCleanup === 'sass' && hasSassWarnings(retryOutput)) ||
+    (forcedCleanup === 'eslint' && hasEslintWarnings(retryOutput));
+  if (stillDirty) {
+    logger.warn('   → Build exited 0 but %s warnings persist — cleanup not converged', forcedCleanup);
+    retryResult.exitCode = 1;
+  }
+}
+
+/**
  * Check if output contains Gulp-specific error patterns
  * Uses case-insensitive matching to catch all variations
  */
@@ -202,9 +225,15 @@ export async function runSuccessSteps(
         // Check for TypeScript warnings (unused variables/imports left after migration)
         // These should be cleaned up even though they don't fail the build
         // Controlled by aiFixTypeScriptWarnings flag (default: true)
+        // When a warning check forces the failure, remember WHY so the AI gets a
+        // warnings-cleanup prompt (not the build-error prompt, which tells it to
+        // ignore anything that doesn't break compilation) and so retry verification
+        // can require the warnings to actually be gone, not just exit code 0.
+        let forcedCleanup: 'typescript' | 'sass' | 'eslint' | null = null;
         if ((flags.aiFixTypeScriptWarnings !== false) && hasTypeScriptWarnings(output) && result.exitCode === 0) {
           logger.warn('   → TypeScript warnings found, forcing cleanup');
           result.exitCode = 1; // Force error handling to trigger Claude cleanup
+          forcedCleanup = 'typescript';
         }
 
         // Check for Sass deprecation warnings (mixed-decls, etc.)
@@ -212,13 +241,18 @@ export async function runSuccessSteps(
         if (hasSassWarnings(output) && result.exitCode === 0) {
           logger.warn('   → Sass deprecation warnings found (declarations after nested rules), forcing cleanup');
           result.exitCode = 1; // Force error handling to trigger Claude cleanup
+          forcedCleanup = 'sass';
         }
 
-        // Check for ESLint warnings (React render/unmount pairing, etc.)
-        // These indicate potential memory leaks or code quality issues
-        if (hasEslintWarnings(output) && result.exitCode === 0) {
-          logger.warn('   → ESLint warnings found (React lifecycle or code quality issues), forcing cleanup');
+        // Check for ESLint warnings (React render/unmount pairing, code quality, etc.).
+        // Opt-in: default off so the author's own rule choices (preserved across the
+        // flat-config migration) are respected and residual warnings from 1.23's
+        // stricter profile are left as-is. Enable ai_fix_eslint_warnings to drive them
+        // to zero (fix-vs-suppress then controlled by ai_fix_eslint_properly).
+        if (flags.aiFixEslintWarnings === true && hasEslintWarnings(output) && result.exitCode === 0) {
+          logger.warn('   → ESLint warnings found and ai_fix_eslint_warnings enabled, forcing cleanup');
           result.exitCode = 1; // Force error handling to trigger Claude cleanup
+          forcedCleanup = 'eslint';
         }
 
         if (result.exitCode !== 0) {
@@ -334,7 +368,8 @@ export async function runSuccessSteps(
               flags.claudeModel,
               flags.aiFixEslintProperly ?? true,
               debugReports,
-              flags.aiMaxRetries
+              flags.aiMaxRetries,
+              forcedCleanup ?? undefined
             );
 
             buildFixPatches.push(...patches);
@@ -366,6 +401,7 @@ export async function runSuccessSteps(
                 reject: false
               });
               logger.info('   [Timing] Build retry took %ss', ((Date.now() - retryStart) / 1000).toFixed(1));
+              reapplyWarningForcing(retryResult, forcedCleanup);
 
               if (retryResult.exitCode === 0) {
                 logger.info('   ✅ Build succeeded after fixes!');
@@ -404,7 +440,8 @@ export async function runSuccessSteps(
                     flags.claudeModel,
                     flags.aiFixEslintProperly ?? true,
                     debugReports,
-                    flags.aiMaxRetries
+                    flags.aiMaxRetries,
+                    forcedCleanup ?? undefined
                   );
 
                   if (iterativePatches.length === 0) {
@@ -439,6 +476,7 @@ export async function runSuccessSteps(
                     reject: false
                   }));
                   logger.info('   [Timing] Iteration %d build retry took %ss', retryCount + 1, ((Date.now() - iterBuildStart) / 1000).toFixed(1));
+                  reapplyWarningForcing(retryResult, forcedCleanup);
 
                   retryCount++;
 

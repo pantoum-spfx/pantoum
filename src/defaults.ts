@@ -54,7 +54,12 @@ export const AI_DEFAULTS = {
   FIX_BUILD_ERRORS: true,
   /** Use AI to fix breaking changes from third-party updates */
   FIX_THIRD_PARTY_ERRORS: true,
-  /** Fix ESLint issues by fixing code (true) vs adding disable comments (false) */
+  /** Whether ESLint warnings trigger the AI cleanup at all. Default off: the author's
+   *  own rule choices are preserved across the flat-config migration, and residual
+   *  warnings from 1.23's stricter profile are left as-is (build still succeeds). Turn
+   *  on to drive eslint warnings to zero (fix-vs-suppress controlled by FIX_ESLINT_PROPERLY). */
+  FIX_ESLINT_WARNINGS: false,
+  /** When fixing ESLint warnings, fix the code (true) vs add disable comments (false) */
   FIX_ESLINT_PROPERLY: true,
   /** Fix TypeScript warnings during build */
   FIX_TYPESCRIPT_WARNINGS: true,
@@ -281,6 +286,7 @@ export interface PantoumSettingsFlat {
   continue_on_solution_fail: boolean;
   ai_fix_m365_errors: boolean;
   ai_fix_build_errors: boolean;
+  ai_fix_eslint_warnings: boolean;
   ai_fix_eslint_properly: boolean;
   ai_fix_typescript_warnings: boolean;
   ai_max_retries: number;
@@ -319,6 +325,7 @@ export function buildDefaultSettings(): PantoumSettingsFlat {
     continue_on_solution_fail: false,
     ai_fix_m365_errors: AI_DEFAULTS.FIX_M365_ERRORS,
     ai_fix_build_errors: AI_DEFAULTS.FIX_BUILD_ERRORS,
+    ai_fix_eslint_warnings: AI_DEFAULTS.FIX_ESLINT_WARNINGS,
     ai_fix_eslint_properly: AI_DEFAULTS.FIX_ESLINT_PROPERLY,
     ai_fix_typescript_warnings: AI_DEFAULTS.FIX_TYPESCRIPT_WARNINGS,
     ai_max_retries: RETRY_DEFAULTS.AI_MAX_RETRIES,

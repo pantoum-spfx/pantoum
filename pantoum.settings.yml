@@ -37,7 +37,12 @@ disable_animations: false
 continue_on_solution_fail: false
 ai_fix_m365_errors: true
 ai_fix_build_errors: true
-ai_fix_eslint_properly: false
+# Preserve the author's ESLint rule choices across the 1.23 flat-config migration
+# always (not a flag). ai_fix_eslint_warnings gates whether the *remaining* warnings
+# from 1.23's stricter profile get AI-fixed; default off = hands-off. When on,
+# ai_fix_eslint_properly picks fix-in-code (true) vs disable-comments (false).
+ai_fix_eslint_warnings: false
+ai_fix_eslint_properly: true
 ai_fix_typescript_warnings: true
 ai_max_retries: 3
 

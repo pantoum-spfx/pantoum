@@ -191,6 +191,11 @@ export type PatchObject = BasePatch & (
     resolutionType?: string;       // 'scss' | 'text' | 'js' (for logging)
   }
   | {
+    type: "preserveEslintRules";
+    file: string;                  // the generated flat-config eslint.config.js
+    rulesBlock: string;            // author's rules object body, captured from .eslintrc.js before deletion
+  }
+  | {
     type: "removeJsonArrayElement";
     file: string;           // e.g. "tsconfig.json"
     // path down into the JSON to find the array:

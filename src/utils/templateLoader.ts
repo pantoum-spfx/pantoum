@@ -24,6 +24,7 @@ export type TemplateName =
   | 'build-error-fix'
   | 'm365-cli-error-fix'
   | 'eslint-optimization'
+  | 'lint-cleanup'
   | 'migration-verification'
   | 'migration-fix'
   | 'third-party-migration';

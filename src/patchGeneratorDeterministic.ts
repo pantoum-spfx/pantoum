@@ -16,6 +16,50 @@ import {
 import type { DetectionPattern } from './schema/manualConfig.js';
 
 /**
+ * When SPFx 1.23 migrates ESLint to flat config, the M365 CLI deletes the author's
+ * .eslintrc.js (FN015008) and writes a stock STRICT eslint.config.js (FN015016),
+ * silently dropping the author's deliberate rule choices (e.g. no-explicit-any: off).
+ * .eslintrc.js still exists at patch-GENERATION time, so read the author's `rules`
+ * object body here and hand it to a preserveEslintRules patch that re-injects it into
+ * the generated flat config at apply time (last wins).
+ * Returns the rules body (without the enclosing braces), or null if there's nothing
+ * to preserve or the file can't be parsed.
+ */
+function extractAuthorEslintRules(solutionPath: string): string | null {
+  try {
+    const eslintrcPath = path.join(solutionPath, '.eslintrc.js');
+    if (!fs.existsSync(eslintrcPath)) return null;
+    const src = fs.readFileSync(eslintrcPath, DEFAULTS.ENCODING);
+    // Find the `rules:` key, then balanced-brace match its object body.
+    const keyIdx = src.search(/\brules\s*:\s*\{/);
+    if (keyIdx === -1) return null;
+    const openIdx = src.indexOf('{', keyIdx);
+    let depth = 0;
+    let closeIdx = -1;
+    for (let i = openIdx; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}') {
+        depth--;
+        if (depth === 0) { closeIdx = i; break; }
+      }
+    }
+    if (closeIdx === -1) return null;
+    const body = src.slice(openIdx + 1, closeIdx).trim();
+    if (body.length === 0) return null;
+    // Re-indent each non-empty entry to sit inside `rules: {` in the flat config.
+    return body
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0)
+      .map(l => `      ${l}`)
+      .join('\n');
+  } catch (e) {
+    logger.warn(`extractAuthorEslintRules: could not parse .eslintrc.js — ${e}`);
+    return null;
+  }
+}
+
+/**
  * Detect custom scripts in package.json that need migration.
  * Reads standard scripts list from YAML config.
  * Returns list of custom script names that contain gulp commands.
@@ -589,6 +633,27 @@ export async function generatePatchesHybrid(
 
     if (deterministicCount > 0) {
       logger.info(`Generated ${deterministicCount} YAML-driven deterministic patches (env injection disabled)`);
+    }
+  }
+
+  // Preserve the author's ESLint rule choices across the 1.23 flat-config migration.
+  // FN015008 (delete .eslintrc.js) signals the migration is happening; the author's
+  // rules would otherwise be dropped when the stock strict eslint.config.js is written.
+  if (instructionIds.includes('FN015008')) {
+    const rulesBlock = extractAuthorEslintRules(solutionDir);
+    if (rulesBlock) {
+      allPatches.push({
+        id: 'PANTOUM-ESLINT-PRESERVE',
+        type: 'preserveEslintRules',
+        title: 'Preserve author ESLint rule overrides in flat config',
+        description: "Re-apply the author's .eslintrc.js rules to the generated eslint.config.js (1.23 flat-config migration drops them)",
+        file: path.join(solutionDir, 'eslint.config.js'),
+        rulesBlock,
+        stage: 'upgrade',
+      } as PatchObject);
+      logger.info('Generated PANTOUM-ESLINT-PRESERVE: carrying author ESLint rules into flat config');
+    } else {
+      logger.info('Flat-config migration detected but no author ESLint rules to preserve');
     }
   }
 
