@@ -26,8 +26,8 @@ export type EnvInjectionStrategy = 'webpack-patch' | 'none';
 
 /** Claude model identifiers */
 export const CLAUDE_MODELS = {
-  /** Claude Sonnet 4.6 - Default model, fast and capable for most migrations */
-  SONNET: 'claude-sonnet-4-6',
+  /** Claude Sonnet 5 - Default model, near-Opus coding/agentic quality at Sonnet cost */
+  SONNET: 'claude-sonnet-5',
   /** Claude Opus 4.6 - Best for complex multi-file migrations */
   OPUS: 'claude-opus-4-6',
   /** Claude Haiku 4.5 - Lightweight operations like fancy name generation */
