@@ -183,6 +183,39 @@ export async function applyPatches(
           break;
         }
 
+        case 'appendTextSnippet': {
+          // Append lines at the end of the file. Used for M365 CLI "To <file> add
+          // <entry>" instructions, which carry no position: routing those through
+          // updateTextSnippet defaulted to fromLine=toLine=1 and REPLACED the first
+          // line of the file (e.g. it deleted the "# Logs" header of .gitignore).
+          const resolvedFile = validateAndResolvePath(patch.file, solutionPath);
+          const text = fs.readFileSync(resolvedFile, DEFAULTS.ENCODING);
+          const lines = text.split('\n');
+          const existing = new Set(lines.map((l: string) => l.trim()));
+
+          const toAppend = patch.patchLines.filter((line: string) => {
+            const trimmed = line.trim();
+            return trimmed.length > 0 && !existing.has(trimmed);
+          });
+
+          if (toAppend.length === 0) {
+            // Already present — nothing to do, but not a failure.
+            success = true;
+            break;
+          }
+
+          // Keep a single trailing newline rather than accumulating blank lines.
+          while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+            lines.pop();
+          }
+
+          lines.push(...toAppend, '');
+          fs.writeFileSync(resolvedFile, lines.join('\n'), DEFAULTS.ENCODING);
+          didModify = true;
+          success = true;
+          break;
+        }
+
         case 'regexReplace': {
           const resolvedFile = validateAndResolvePath(patch.file, solutionPath);
           if (patch.jsonPath && patch.jsonPath.length > 0) {

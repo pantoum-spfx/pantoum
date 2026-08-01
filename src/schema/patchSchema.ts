@@ -185,6 +185,11 @@ export type PatchObject = BasePatch & (
     patchLines: string[];          // replacement lines to insert
   }
   | {
+    type: "appendTextSnippet";
+    file: string;
+    patchLines: string[];          // lines to append at end of file; already-present lines are skipped
+  }
+  | {
     type: "removeTextSnippet";
     file: string;
     contentToDelete: string;       // exact line(s) to remove; matched by content, not line number

@@ -344,14 +344,42 @@ class DeterministicPatchGenerator {
       jsonSnippet = { exclude: null };
     }
 
-    // Handle other remove patterns
+    // Handle other remove patterns.
+    //
+    // The M365 CLI encodes a removal as a *value* rather than as a delete: its
+    // PackageRule builds the resolution by interpolating `"${this.propertyValue}"`,
+    // so a rule constructed with no value (e.g. FN021001 "Remove package.json
+    // property" for `main`) yields the literal JSON {"main": "undefined"}, and a
+    // script removal (FN021005) yields {"scripts": {"test": ""}}.
+    //
+    // deepMerge only deletes a key when the incoming value is null, so these
+    // sentinels would otherwise be *written* — leaving `"main": "undefined"` and a
+    // dead `"test": ""` in every upgraded solution. Normalise them to null, and
+    // recurse so nested cases such as scripts.test are covered too.
     if (instruction.description.toLowerCase().startsWith('remove ')) {
-      // Check if setting empty array, might need to set to null
-      for (const key in jsonSnippet) {
-        if (Array.isArray(jsonSnippet[key]) && jsonSnippet[key].length === 0) {
-          jsonSnippet[key] = null;
+      const nullifyRemovalSentinels = (obj: Record<string, unknown>): void => {
+        for (const key of Object.keys(obj)) {
+          const value = obj[key];
+
+          if (Array.isArray(value)) {
+            if (value.length === 0) {
+              obj[key] = null;
+            }
+            continue;
+          }
+
+          if (value !== null && typeof value === 'object') {
+            nullifyRemovalSentinels(value as Record<string, unknown>);
+            continue;
+          }
+
+          if (value === undefined || value === 'undefined' || value === '') {
+            obj[key] = null;
+          }
         }
-      }
+      };
+
+      nullifyRemovalSentinels(jsonSnippet);
     }
 
     // If this is a file creation, return addFile patch instead
@@ -429,6 +457,22 @@ class DeterministicPatchGenerator {
         }
         return line;
       });
+    }
+
+    // An "add" instruction with no position is an APPEND, not a replace.
+    // The M365 CLI emits these as e.g. "To .gitignore add the 'lib-commonjs' folder"
+    // with resolutionType 'text' and no position. Falling through to the line-number
+    // logic below defaulted to fromLine=toLine=1, which made the applier overwrite the
+    // file's first line (the "# Logs" header of .gitignore was lost this way).
+    const isAddition = instruction.description.toLowerCase().includes(' add ') ||
+                       instruction.description.toLowerCase().startsWith('add ');
+    if (isAddition && instruction.position?.line === undefined) {
+      return {
+        ...basePatch,
+        type: 'appendTextSnippet',
+        file: absoluteFile,
+        patchLines
+      };
     }
 
     // Determine line numbers
