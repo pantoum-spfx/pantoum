@@ -16,6 +16,9 @@ interface ErrorContext {
   stage: 'build-fix' | 'post-upgrade';
   aiFixEslintProperly?: boolean;
   aiMaxRetries?: number;
+  /** Set when the "failure" was forced by a warnings check on a SUCCESSFUL build —
+   *  selects the warnings-cleanup prompt instead of the build-error prompt. */
+  cleanupReason?: 'typescript' | 'sass' | 'eslint';
 }
 
 /**
@@ -85,6 +88,27 @@ export class ErrorAnalyzer {
         contextFilesList: contextFiles.map(file => `- ${file}`).join('\n')
       };
       return renderTemplate('m365-cli-error-fix', templateVars);
+    }
+
+    // Warnings cleanup — the build SUCCEEDS; the failure was forced by a warnings
+    // check. The build-error prompt must not be used here: it instructs the model
+    // to only make the build compile and ignore everything else, so it correctly
+    // no-ops on warnings and the cleanup never happens.
+    if (context.cleanupReason) {
+      const warningCount = (errorOutput.match(/warning:/gi) || []).length;
+      const fixModeInstruction = context.aiFixEslintProperly === false
+        ? 'Resolve each warning with a targeted `// eslint-disable-next-line <rule>` comment directly above the offending line. Do not change the code itself and do not edit the ESLint configuration.'
+        : 'Fix the code itself. Do NOT suppress: no eslint-disable comments, no rule changes in .eslintrc.js / eslint.config.js, no tsconfig loosening.';
+      const templateVars: TemplateVariables = {
+        solutionName,
+        targetVersion,
+        warningKind: context.cleanupReason,
+        warningCount: String(warningCount),
+        fixModeInstruction,
+        errorOutput,
+        contextFilesList: contextFiles.map(file => `- ${file}`).join('\n')
+      };
+      return renderTemplate('lint-cleanup', templateVars);
     }
     
     // Build/test errors - comprehensive fixes with functionality preservation

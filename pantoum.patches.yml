@@ -145,6 +145,28 @@ manualSteps:
       "port": 4321
       "https": true
       "initialPage": "https://{tenantDomain}/_layouts/workbench.aspx"
+  # Strip ipAddress:0.0.0.0 from serve.json. Under the old gulp serve it was a bind
+  # address and the debug-manifest URL still resolved to localhost, so it worked.
+  # Under the Heft serve schema the value is used verbatim in that URL
+  # (https://0.0.0.0:4321/...), which a browser cannot fetch — so `heft start` runs
+  # but the web part never loads on the workbench. Removing it restores the stock
+  # localhost default. Guarded to the exact broken value; a real LAN IP is left alone
+  # (it resolves fine under Heft). Only fires when 0.0.0.0 is actually present.
+  - id: "M000006B"
+    enabled: true
+    title: "Normalize serve.json ipAddress for Heft serve"
+    description: "Strip ipAddress:0.0.0.0 from config/serve.json (breaks the Heft debug-manifest URL)"
+    when: post
+    condition:
+      type: fileContains
+      path: config/serve.json
+      pattern: '"ipAddress"\s*:\s*"0\.0\.0\.0"'
+    type: regexReplace
+    file: config/serve.json
+    rules:
+      - pattern: '[ \t]*"ipAddress"[ \t]*:[ \t]*"0\.0\.0\.0"[ \t]*,?[ \t]*\n'
+        replacement: ''
+        flags: 'g'
   # 98) npm install - MOVED TO SUCCESS STEPS
   # - id: "M999998"
   #   description: "npm install to ensure all dependencies are up to date"

@@ -8,10 +8,15 @@ import type { Tool, ClaudeLogger, ToolCallback, AssistantCallback, AdapterConfig
 import { DEFAULTS } from '../constants.js';
 
 /**
- * Map full model identifiers to the simplified names the Agent SDK expects.
- * Shared by both ClaudeAgentSdkAdapter.buildOptions() and QueryBuilder.asText().
+ * Resolve the model string for the Agent SDK.
+ * The SDK accepts both aliases ('sonnet', 'opus', 'haiku') and full model IDs
+ * ('claude-sonnet-5', ...). Full IDs are passed through unchanged so pantoum
+ * controls exactly which model runs — SDK aliases resolve to whatever model
+ * the installed SDK version pins (e.g. 'sonnet' -> claude-sonnet-4-6 on 0.3.185),
+ * which silently drifts from CLAUDE_MODELS. Bare shortnames still map to aliases.
  */
 function mapModelForSDK(model: string): string {
+  if (model.startsWith('claude-')) return model; // full ID: pass through
   if (model.includes('sonnet')) return 'sonnet';
   if (model.includes('opus')) return 'opus';
   if (model.includes('haiku')) return 'haiku';
@@ -143,7 +148,10 @@ class ClaudeAgentSdkAdapter {
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       permissionMode: this.config.skipPermissions ? 'bypassPermissions' : 'default',
       ...(this.config.skipPermissions && { allowDangerouslySkipPermissions: true }),
-      settingSources: ['user', 'project', 'local'],
+      // Isolate pantoum's AI from the user's personal Claude Code config: do NOT load
+      // 'user' settings — they enable harness features like `advisor` (advisorModel) and
+      // user MCP servers that aren't part of pantoum's controlled toolset and hang/inflate runs.
+      settingSources: ['project', 'local'],
       ...(effectiveThinkingTokens && { maxThinkingTokens: effectiveThinkingTokens }),
       ...(this.config.abortController && { abortController: this.config.abortController }),
       ...(this.config.persistSession !== undefined && { persistSession: this.config.persistSession }),
@@ -280,8 +288,10 @@ class QueryBuilder {
           // Permission mode based on skipPermissions
           permissionMode: this.config.skipPermissions ? 'bypassPermissions' : 'default',
 
-          // Setting sources: load CLAUDE.md and project settings
-          settingSources: ['user', 'project', 'local'],
+          // Setting sources: isolate from the user's personal Claude Code config
+          // (advisorModel/advisor, user MCP) — not part of pantoum's controlled toolset;
+          // loading 'user' hangs/inflates runs (model detours through the advisor tool).
+          settingSources: ['project', 'local'],
 
           // Extended thinking budget — effort level takes precedence over explicit tokens
           ...(resolveMaxThinkingTokens(this.config) && {

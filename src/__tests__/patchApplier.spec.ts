@@ -203,4 +203,78 @@ describe('patchApplier', () => {
       expect(results[1].success).toBe(true); // updateDependency
     });
   });
+
+  describe('appendTextSnippet', () => {
+    it('appends to the end without touching the first line', async () => {
+      const original = '# Logs\nlogs\n*.log\n\n# Build generated files\nlib\n';
+      vi.mocked(fs.readFileSync).mockReturnValue(original as never);
+      let written = '';
+      vi.mocked(fs.writeFileSync).mockImplementation(((_f: unknown, c: unknown) => {
+        written = c as string;
+      }) as never);
+
+      const patch = {
+        id: 'FN000001',
+        title: '.gitignore',
+        description: "To .gitignore add the 'lib-commonjs' folder",
+        type: 'appendTextSnippet',
+        file: '.gitignore',
+        patchLines: ['lib-commonjs'],
+      } as PatchObject;
+
+      const results = await applyPatches(solutionPath, [patch]);
+
+      expect(results[0].success).toBe(true);
+      // the header must survive — this is the bug that clobbered line 1
+      expect(written.split('\n')[0]).toBe('# Logs');
+      expect(written).toContain('lib-commonjs');
+      expect(written.indexOf('lib-commonjs')).toBeGreaterThan(written.indexOf('# Build generated files'));
+    });
+
+    it('is idempotent when the entry is already present', async () => {
+      const original = '# Logs\nlib\nlib-commonjs\n';
+      vi.mocked(fs.readFileSync).mockReturnValue(original as never);
+      const writeSpy = vi.mocked(fs.writeFileSync).mockImplementation((() => {}) as never);
+
+      const patch = {
+        id: 'FN000001',
+        title: '.gitignore',
+        description: "To .gitignore add the 'lib-commonjs' folder",
+        type: 'appendTextSnippet',
+        file: '.gitignore',
+        patchLines: ['lib-commonjs'],
+      } as PatchObject;
+
+      const results = await applyPatches(solutionPath, [patch]);
+
+      expect(results[0].success).toBe(true);
+      expect(writeSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateJsonSnippet removal semantics', () => {
+    it('deletes a key when the incoming value is null', async () => {
+      const mockPkg = { name: 'x', main: 'lib/index.js', scripts: { test: 'gulp test' } };
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(mockPkg, null, 2) as never);
+      let written = '';
+      vi.mocked(fs.writeFileSync).mockImplementation(((_f: unknown, c: unknown) => {
+        written = c as string;
+      }) as never);
+
+      const patch = {
+        id: 'FN021001',
+        title: 'main',
+        description: 'Remove package.json property',
+        type: 'updateJsonSnippet',
+        file: 'package.json',
+        jsonSnippet: { main: null },
+      } as PatchObject;
+
+      await applyPatches(solutionPath, [patch]);
+
+      const result = JSON.parse(written);
+      expect('main' in result).toBe(false);
+      expect(result.name).toBe('x');
+    });
+  });
 });

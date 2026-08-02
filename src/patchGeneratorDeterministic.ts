@@ -16,6 +16,50 @@ import {
 import type { DetectionPattern } from './schema/manualConfig.js';
 
 /**
+ * When SPFx 1.23 migrates ESLint to flat config, the M365 CLI deletes the author's
+ * .eslintrc.js (FN015008) and writes a stock STRICT eslint.config.js (FN015016),
+ * silently dropping the author's deliberate rule choices (e.g. no-explicit-any: off).
+ * .eslintrc.js still exists at patch-GENERATION time, so read the author's `rules`
+ * object body here and hand it to a preserveEslintRules patch that re-injects it into
+ * the generated flat config at apply time (last wins).
+ * Returns the rules body (without the enclosing braces), or null if there's nothing
+ * to preserve or the file can't be parsed.
+ */
+function extractAuthorEslintRules(solutionPath: string): string | null {
+  try {
+    const eslintrcPath = path.join(solutionPath, '.eslintrc.js');
+    if (!fs.existsSync(eslintrcPath)) return null;
+    const src = fs.readFileSync(eslintrcPath, DEFAULTS.ENCODING);
+    // Find the `rules:` key, then balanced-brace match its object body.
+    const keyIdx = src.search(/\brules\s*:\s*\{/);
+    if (keyIdx === -1) return null;
+    const openIdx = src.indexOf('{', keyIdx);
+    let depth = 0;
+    let closeIdx = -1;
+    for (let i = openIdx; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}') {
+        depth--;
+        if (depth === 0) { closeIdx = i; break; }
+      }
+    }
+    if (closeIdx === -1) return null;
+    const body = src.slice(openIdx + 1, closeIdx).trim();
+    if (body.length === 0) return null;
+    // Re-indent each non-empty entry to sit inside `rules: {` in the flat config.
+    return body
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0)
+      .map(l => `      ${l}`)
+      .join('\n');
+  } catch (e) {
+    logger.warn(`extractAuthorEslintRules: could not parse .eslintrc.js — ${e}`);
+    return null;
+  }
+}
+
+/**
  * Detect custom scripts in package.json that need migration.
  * Reads standard scripts list from YAML config.
  * Returns list of custom script names that contain gulp commands.
@@ -300,14 +344,42 @@ class DeterministicPatchGenerator {
       jsonSnippet = { exclude: null };
     }
 
-    // Handle other remove patterns
+    // Handle other remove patterns.
+    //
+    // The M365 CLI encodes a removal as a *value* rather than as a delete: its
+    // PackageRule builds the resolution by interpolating `"${this.propertyValue}"`,
+    // so a rule constructed with no value (e.g. FN021001 "Remove package.json
+    // property" for `main`) yields the literal JSON {"main": "undefined"}, and a
+    // script removal (FN021005) yields {"scripts": {"test": ""}}.
+    //
+    // deepMerge only deletes a key when the incoming value is null, so these
+    // sentinels would otherwise be *written* — leaving `"main": "undefined"` and a
+    // dead `"test": ""` in every upgraded solution. Normalise them to null, and
+    // recurse so nested cases such as scripts.test are covered too.
     if (instruction.description.toLowerCase().startsWith('remove ')) {
-      // Check if setting empty array, might need to set to null
-      for (const key in jsonSnippet) {
-        if (Array.isArray(jsonSnippet[key]) && jsonSnippet[key].length === 0) {
-          jsonSnippet[key] = null;
+      const nullifyRemovalSentinels = (obj: Record<string, unknown>): void => {
+        for (const key of Object.keys(obj)) {
+          const value = obj[key];
+
+          if (Array.isArray(value)) {
+            if (value.length === 0) {
+              obj[key] = null;
+            }
+            continue;
+          }
+
+          if (value !== null && typeof value === 'object') {
+            nullifyRemovalSentinels(value as Record<string, unknown>);
+            continue;
+          }
+
+          if (value === undefined || value === 'undefined' || value === '') {
+            obj[key] = null;
+          }
         }
-      }
+      };
+
+      nullifyRemovalSentinels(jsonSnippet);
     }
 
     // If this is a file creation, return addFile patch instead
@@ -352,6 +424,25 @@ class DeterministicPatchGenerator {
       };
     }
 
+    // Remove/delete instruction → emit a content-matched delete, NOT a line replace.
+    // (Mirrors the remove handling already present in handleJsonResolution.)
+    // Without this, a "Remove scss file import" finding whose resolution is the OLD
+    // import line was turned into an updateTextSnippet that re-wrote the old line.
+    const isRemoval = instruction.description.toLowerCase().includes('remove') ||
+                      instruction.description.toLowerCase().includes('delete');
+    if (isRemoval) {
+      const contentToDelete = instruction.resolution
+        .replace(/\\$/gm, '')   // strip trailing backslash line-continuations
+        .replace(/\\"/g, '"');  // unescape quotes
+      return {
+        ...basePatch,
+        type: 'removeTextSnippet',
+        file: absoluteFile,
+        contentToDelete,
+        resolutionType: instruction.resolutionType
+      };
+    }
+
     // Regular text update
     let patchLines = instruction.resolution.split('\n')
       .map(line => line.replace(/\\$/g, ''));  // remove trailing backslashes
@@ -366,6 +457,22 @@ class DeterministicPatchGenerator {
         }
         return line;
       });
+    }
+
+    // An "add" instruction with no position is an APPEND, not a replace.
+    // The M365 CLI emits these as e.g. "To .gitignore add the 'lib-commonjs' folder"
+    // with resolutionType 'text' and no position. Falling through to the line-number
+    // logic below defaulted to fromLine=toLine=1, which made the applier overwrite the
+    // file's first line (the "# Logs" header of .gitignore was lost this way).
+    const isAddition = instruction.description.toLowerCase().includes(' add ') ||
+                       instruction.description.toLowerCase().startsWith('add ');
+    if (isAddition && instruction.position?.line === undefined) {
+      return {
+        ...basePatch,
+        type: 'appendTextSnippet',
+        file: absoluteFile,
+        patchLines
+      };
     }
 
     // Determine line numbers
@@ -570,6 +677,27 @@ export async function generatePatchesHybrid(
 
     if (deterministicCount > 0) {
       logger.info(`Generated ${deterministicCount} YAML-driven deterministic patches (env injection disabled)`);
+    }
+  }
+
+  // Preserve the author's ESLint rule choices across the 1.23 flat-config migration.
+  // FN015008 (delete .eslintrc.js) signals the migration is happening; the author's
+  // rules would otherwise be dropped when the stock strict eslint.config.js is written.
+  if (instructionIds.includes('FN015008')) {
+    const rulesBlock = extractAuthorEslintRules(solutionDir);
+    if (rulesBlock) {
+      allPatches.push({
+        id: 'PANTOUM-ESLINT-PRESERVE',
+        type: 'preserveEslintRules',
+        title: 'Preserve author ESLint rule overrides in flat config',
+        description: "Re-apply the author's .eslintrc.js rules to the generated eslint.config.js (1.23 flat-config migration drops them)",
+        file: path.join(solutionDir, 'eslint.config.js'),
+        rulesBlock,
+        stage: 'upgrade',
+      } as PatchObject);
+      logger.info('Generated PANTOUM-ESLINT-PRESERVE: carrying author ESLint rules into flat config');
+    } else {
+      logger.info('Flat-config migration detected but no author ESLint rules to preserve');
     }
   }
 

@@ -58,6 +58,7 @@ export interface UpgradeOptions {
     updateThirdPartyDevDeps?: 'none' | 'patch';
     cleanInstallAfterDepUpdate?: boolean;
     aiFixThirdPartyErrors?: boolean;
+    aiFixEslintWarnings?: boolean;
     aiFixEslintProperly?: boolean;
     aiFixTypeScriptWarnings?: boolean;
     aiMaxRetries?: number; // Max AI retry iterations for error fixing (1-10)

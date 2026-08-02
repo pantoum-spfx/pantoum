@@ -253,7 +253,8 @@ export class PatchService {
     model: string = DEFAULTS.CLAUDE_MODEL,
     aiFixEslintProperly: boolean = true,
     debugReports?: boolean,
-    aiMaxRetries?: number
+    aiMaxRetries?: number,
+    cleanupReason?: 'typescript' | 'sass' | 'eslint'
   ): Promise<PatchObject[]> {
     logger.info('🤖 Analyzing %s errors with Claude Code...', errorType);
     logger.info('   → Error output preview: %s...', errorOutput.substring(0, 200));
@@ -266,7 +267,8 @@ export class PatchService {
       errorType,
       stage: errorType === 'upgrade-report' ? 'build-fix' : 'post-upgrade',
       aiFixEslintProperly,
-      aiMaxRetries
+      aiMaxRetries,
+      cleanupReason
     } as const;
 
     const analysis = await this.errorAnalyzer.analyzeError(errorContext);

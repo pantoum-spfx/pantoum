@@ -71,6 +71,7 @@ export const CLI_FIELD_MAP: Record<string, string> = {
   continue_on_solution_fail: 'onSingleSolutionFail',
   ai_fix_m365_errors: 'aiFixM365Errors',
   ai_fix_build_errors: 'aiFixBuildErrors',
+  ai_fix_eslint_warnings: 'aiFixEslintWarnings',
   ai_fix_eslint_properly: 'aiFixEslintProperly',
   ai_fix_typescript_warnings: 'aiFixTypeScriptWarnings',
   ai_max_retries: 'aiMaxRetries',

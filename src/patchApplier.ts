@@ -56,7 +56,17 @@ export async function applyPatches(
   // Count skipped patches
   const skippedPatches: PatchObject[] = [];
 
-  for (const patch of patches) {
+  // Apply content-matched removals (removeTextSnippet) and eslint-rule preservation
+  // (preserveEslintRules) in a FINAL pass: line-anchored adds/replaces run first on
+  // un-shifted line numbers, and preserveEslintRules must run after the M365 CLI
+  // finding that CREATES eslint.config.js — making the result order-independent.
+  const isFinalPass = (t: string) => t === 'removeTextSnippet' || t === 'preserveEslintRules';
+  const orderedPatches: PatchObject[] = [
+    ...patches.filter(p => !isFinalPass(p.type)),
+    ...patches.filter(p => isFinalPass(p.type)),
+  ];
+
+  for (const patch of orderedPatches) {
     logger.info(`→ Processing patch ${patch.id}: ${patch.title || patch.description || 'No description'} (type=${patch.type})`);
     let didModify = false;
     let success = false;
@@ -173,6 +183,39 @@ export async function applyPatches(
           break;
         }
 
+        case 'appendTextSnippet': {
+          // Append lines at the end of the file. Used for M365 CLI "To <file> add
+          // <entry>" instructions, which carry no position: routing those through
+          // updateTextSnippet defaulted to fromLine=toLine=1 and REPLACED the first
+          // line of the file (e.g. it deleted the "# Logs" header of .gitignore).
+          const resolvedFile = validateAndResolvePath(patch.file, solutionPath);
+          const text = fs.readFileSync(resolvedFile, DEFAULTS.ENCODING);
+          const lines = text.split('\n');
+          const existing = new Set(lines.map((l: string) => l.trim()));
+
+          const toAppend = patch.patchLines.filter((line: string) => {
+            const trimmed = line.trim();
+            return trimmed.length > 0 && !existing.has(trimmed);
+          });
+
+          if (toAppend.length === 0) {
+            // Already present — nothing to do, but not a failure.
+            success = true;
+            break;
+          }
+
+          // Keep a single trailing newline rather than accumulating blank lines.
+          while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+            lines.pop();
+          }
+
+          lines.push(...toAppend, '');
+          fs.writeFileSync(resolvedFile, lines.join('\n'), DEFAULTS.ENCODING);
+          didModify = true;
+          success = true;
+          break;
+        }
+
         case 'regexReplace': {
           const resolvedFile = validateAndResolvePath(patch.file, solutionPath);
           if (patch.jsonPath && patch.jsonPath.length > 0) {
@@ -268,6 +311,79 @@ export async function applyPatches(
           const newText = JSON.stringify(json, null, 2) + '\n';
           fs.writeFileSync(resolvedFile, newText, DEFAULTS.ENCODING);
           didModify = true;
+          success = true;
+          break;
+        }
+        case 'removeTextSnippet': {
+          // Content-matched line deletion for M365 "remove" findings.
+          // Runs in the final pass (see ordering above) so adds/replaces have
+          // already executed on un-shifted line numbers.
+          const resolvedFile = validateAndResolvePath(patch.file, solutionPath);
+          const text = fs.readFileSync(resolvedFile, DEFAULTS.ENCODING);
+          const lines = text.split('\n');
+          const norm = (l: string): string => {
+            const t = l.trim();
+            if (t.length === 0) return '';
+            return t.endsWith(';') ? t : t + ';';
+          };
+          const targets = new Set(
+            patch.contentToDelete.split('\n').map(norm).filter(t => t.length > 0)
+          );
+          const kept = targets.size === 0 ? lines : lines.filter(l => !targets.has(norm(l)));
+          const removedCount = lines.length - kept.length;
+          fs.writeFileSync(resolvedFile, kept.join('\n'), DEFAULTS.ENCODING);
+          // Post-condition: none of the targeted lines may remain. Fail loud
+          // instead of silently reporting success (the original bug).
+          const stillPresent = fs.readFileSync(resolvedFile, DEFAULTS.ENCODING)
+            .split('\n').some(l => targets.has(norm(l)));
+          if (stillPresent) {
+            throw new Error(
+              `removeTextSnippet: target content still present in ${resolvedFile} after removal`
+            );
+          }
+          if (removedCount > 0) {
+            didModify = true;
+            logger.info(`✔ removeTextSnippet removed ${removedCount} line(s) from ${path.basename(resolvedFile)}`);
+          } else {
+            logger.info(`— removeTextSnippet: target already absent in ${path.basename(resolvedFile)}`);
+          }
+          success = true;
+          break;
+        }
+        case 'preserveEslintRules': {
+          // The 1.23 flat-config migration deletes the author's .eslintrc.js and
+          // generates a stock STRICT eslint.config.js, dropping the author's
+          // deliberate rule choices (e.g. "@typescript-eslint/no-explicit-any": "off").
+          // Re-inject those rules as a final flat-config entry (last wins), so the
+          // upgrade is faithful to the author's lint policy. Runs in the final pass
+          // so eslint.config.js already exists.
+          const resolvedFile = validateAndResolvePath(patch.file, solutionPath);
+          if (!fs.existsSync(resolvedFile)) {
+            logger.warn(`— preserveEslintRules: ${path.basename(resolvedFile)} not found; skipping`);
+            success = true;
+            break;
+          }
+          const src = fs.readFileSync(resolvedFile, DEFAULTS.ENCODING);
+          const MARKER = '/* pantoum: preserved author eslint rules */';
+          if (src.includes(MARKER)) {
+            logger.info(`— preserveEslintRules: rules already preserved in ${path.basename(resolvedFile)}`);
+            success = true;
+            break;
+          }
+          // Insert a new config object before the LAST ']' that closes the
+          // module.exports array. Normalise any trailing comma so we emit exactly one.
+          const lastBracket = src.lastIndexOf(']');
+          if (lastBracket === -1) {
+            logger.warn(`— preserveEslintRules: no array literal in ${path.basename(resolvedFile)}; skipping`);
+            success = true;
+            break;
+          }
+          const head = src.slice(0, lastBracket).replace(/,\s*$/, '');
+          const tail = src.slice(lastBracket);
+          const entry = `,\n  ${MARKER}\n  {\n    rules: {\n${patch.rulesBlock}\n    }\n  }\n`;
+          fs.writeFileSync(resolvedFile, head + entry + tail, DEFAULTS.ENCODING);
+          didModify = true;
+          logger.info(`✔ preserveEslintRules re-applied author rules to ${path.basename(resolvedFile)}`);
           success = true;
           break;
         }
