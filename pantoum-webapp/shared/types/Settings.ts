@@ -52,6 +52,7 @@ export interface PantoumSettings {
   continue_on_solution_fail: boolean;
   ai_fix_m365_errors: boolean;
   ai_fix_build_errors: boolean;
+  ai_fix_eslint_warnings: boolean;
   ai_fix_eslint_properly: boolean;
   ai_fix_typescript_warnings: boolean;
   ai_max_retries: number;
@@ -75,6 +76,7 @@ export const SETTING_LABELS: Partial<Record<keyof PantoumSettings, string>> = {
   thinking_effort: 'Thinking effort',
   ai_fix_m365_errors: 'Fix M365 CLI errors',
   ai_fix_build_errors: 'Fix build errors',
+  ai_fix_eslint_warnings: 'Fix ESLint warnings',
   ai_fix_eslint_properly: 'Fix ESLint properly',
   ai_fix_typescript_warnings: 'Fix TypeScript warnings',
   ai_fix_third_party_errors: 'Fix third-party breaking changes',
@@ -110,6 +112,7 @@ export const SETTING_DESCRIPTIONS: Record<keyof PantoumSettings, string> = {
   continue_on_solution_fail: 'When upgrading multiple solutions, continue to the next one if the current solution fails instead of stopping the entire batch.',
   ai_fix_m365_errors: 'When M365 CLI reports parsing or schema errors during upgrade, Pantoum uses Claude to analyze the error output and attempt automatic fixes.',
   ai_fix_build_errors: 'After applying patches, if the project fails to build or tests fail, Pantoum uses Claude to read the error output and apply targeted code fixes.',
+  ai_fix_eslint_warnings: 'When ON, Pantoum also cleans up ESLint warnings left by the upgrade (not just errors), aiming for a warning-free build. When OFF, warnings are reported but left in place.',
   ai_fix_eslint_properly: 'When ON, Pantoum asks Claude to fix the actual code to satisfy ESLint rules. When OFF, it adds eslint-disable comments instead — faster but less clean.',
   ai_fix_typescript_warnings: 'Pantoum uses Claude to fix TypeScript compiler warnings (e.g. unused variables, missing types) that appear during the post-upgrade build.',
   ai_max_retries: 'How many times Pantoum retries Claude-powered error fixing before giving up. Each retry re-runs the build, analyzes new errors, and applies fixes. Range: 1–10.',
@@ -182,6 +185,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
       {
         title: 'AI Fixing',
         settings: [
+          'ai_fix_eslint_warnings',
           'ai_fix_eslint_properly',
           'ai_fix_typescript_warnings',
           'ai_fix_third_party_errors',

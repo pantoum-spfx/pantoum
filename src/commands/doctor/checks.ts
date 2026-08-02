@@ -1,5 +1,7 @@
 import { execSync } from 'child_process';
 import { createRequire } from 'module';
+import * as path from 'path';
+import * as fs from 'fs';
 import { getTerminalCapabilities } from '../../utils/terminalCapabilities.js';
 import { isWSL } from '../../utils/platform.js';
 import { getVersion } from '../../utils/version.js';
@@ -151,17 +153,40 @@ export function checkClaudeCode(): CheckResult {
  * Check Claude Agent SDK version
  */
 export function checkAgentSdk(): CheckResult {
-  try {
-    const sdkPackagePath = require.resolve(
-      '@anthropic-ai/claude-agent-sdk/package.json'
-    );
-    const sdkPackage = require(sdkPackagePath) as { version: string };
+  const SDK_NAME = '@anthropic-ai/claude-agent-sdk';
 
-    return {
-      name: 'Agent SDK',
-      status: 'ok',
-      value: sdkPackage.version,
-    };
+  try {
+    // Resolve the package entry point, then walk up to the package.json that owns
+    // it. Requesting '<pkg>/package.json' directly throws ERR_PACKAGE_PATH_NOT_EXPORTED
+    // on SDK versions that ship an "exports" map without a './package.json' entry,
+    // which made this check report "not found" for an SDK that was installed and
+    // working.
+    let dir = path.dirname(require.resolve(SDK_NAME));
+
+    for (let depth = 0; depth < 8; depth++) {
+      const candidate = path.join(dir, 'package.json');
+
+      if (fs.existsSync(candidate)) {
+        const pkg = JSON.parse(fs.readFileSync(candidate, 'utf8')) as {
+          name?: string;
+          version?: string;
+        };
+
+        if (pkg.name === SDK_NAME && pkg.version) {
+          return {
+            name: 'Agent SDK',
+            status: 'ok',
+            value: pkg.version,
+          };
+        }
+      }
+
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+
+    throw new Error(`Could not locate package.json for ${SDK_NAME}`);
   } catch {
     return {
       name: 'Agent SDK',
