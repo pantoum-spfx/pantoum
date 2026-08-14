@@ -34,6 +34,9 @@ Instructions:
 5. Make the minimal change needed for M365 CLI to parse files
 6. Do not change Node.js versions (no 'nvm use', 'n use', etc.)
 7. Preserve all existing code logic - just fix syntax for parsing
+8. Do not stop after only reading files; if you identify a concrete parsing issue, you must edit the file to fix it before finishing
+9. For malformed JSON such as trailing commas, missing quotes, or bracket/comma issues, apply the exact minimal text edit immediately
+10. After editing, briefly state what you changed so the caller can retry M365 CLI
 
 COMMON M365 CLI PARSING ERRORS:
 - JSON syntax errors: Remove trailing commas, fix brackets
