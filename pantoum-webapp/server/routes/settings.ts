@@ -5,10 +5,10 @@ import yaml from 'js-yaml';
 import { fileURLToPath } from 'url';
 import type { PantoumSettings } from '../../shared/types/Settings.js';
 import { loadDefaultSettings } from '../services/defaultsLoader.js';
+import { resolveSettings } from '../../../src/settingsLoader.js';
 
 const defaultsPromise = loadDefaultSettings();
 type LegacyPantoumSettings = Partial<PantoumSettings> & { claude_model?: string };
-const SUPPORTED_AGENT_MODELS = ['sonnet', 'opus'] as const;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,43 +31,11 @@ function getSettingsPath(): string {
 
 export const settingsRouter = Router();
 
-function normalizeAgentModel(
-  candidate: string | undefined,
-  fallback: PantoumSettings['agent_model'],
-): PantoumSettings['agent_model'] {
-  if (!candidate) return fallback;
-
-  const lower = candidate.toLowerCase();
-  if (SUPPORTED_AGENT_MODELS.includes(lower as PantoumSettings['agent_model'])) {
-    return lower as PantoumSettings['agent_model'];
-  }
-
-  if (lower.includes('opus')) return 'opus';
-  if (lower.includes('sonnet')) return 'sonnet';
-
-  return fallback;
-}
-
 function normalizeSettings(
   input: LegacyPantoumSettings,
   defaults: PantoumSettings,
 ): PantoumSettings {
-  const { claude_model: legacyModel, agent_provider: _ignoredProvider, ...rest } =
-    input as LegacyPantoumSettings & Record<string, unknown>;
-
-  const requestedModel =
-    typeof rest.agent_model === 'string'
-      ? rest.agent_model
-      : typeof legacyModel === 'string'
-        ? legacyModel
-        : defaults.agent_model;
-
-  return {
-    ...defaults,
-    ...(rest as Partial<PantoumSettings>),
-    agent_provider: 'claude',
-    agent_model: normalizeAgentModel(requestedModel, defaults.agent_model),
-  };
+  return resolveSettings(defaults, input as Partial<PantoumSettings>) as PantoumSettings;
 }
 
 /**
@@ -87,7 +55,7 @@ settingsRouter.get('/', async (_req, res) => {
     }
 
     const content = fs.readFileSync(settingsPath, 'utf-8');
-    const loaded = yaml.load(content, { schema: yaml.JSON_SCHEMA }) as LegacyPantoumSettings;
+    const loaded = (yaml.load(content, { schema: yaml.JSON_SCHEMA }) ?? {}) as LegacyPantoumSettings;
     const settings = normalizeSettings(loaded, defaults);
 
     res.json({
@@ -178,7 +146,7 @@ settingsRouter.post('/import', async (req, res) => {
     }
 
     const defaults = await defaultsPromise;
-    const loaded = yaml.load(content, { schema: yaml.JSON_SCHEMA }) as LegacyPantoumSettings;
+    const loaded = (yaml.load(content, { schema: yaml.JSON_SCHEMA }) ?? {}) as LegacyPantoumSettings;
     const settings = normalizeSettings(loaded, defaults);
 
     res.json({

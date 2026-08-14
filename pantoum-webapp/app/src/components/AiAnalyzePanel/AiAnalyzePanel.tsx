@@ -312,9 +312,9 @@ export const AiAnalyzePanel: React.FC<AiAnalyzePanelProps> = ({
             <div className={styles.metricStat}>
               <div className={styles.metricValue} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: compact ? '20px' : '24px' }}>
                 <MoneyRegular style={{ fontSize: compact ? '16px' : '20px' }} />
-                ${metrics.costUSD.toFixed(3)}
+                {metrics.costUSD > 0 ? `$${metrics.costUSD.toFixed(3)}` : 'N/A'}
               </div>
-              <Text size={200}>Cost</Text>
+              <Text size={200}>Cost / quota</Text>
             </div>
           </div>
         </Card>

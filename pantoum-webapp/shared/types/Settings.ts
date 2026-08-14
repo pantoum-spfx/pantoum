@@ -7,11 +7,21 @@ type EnvInjectionStrategy = 'webpack-patch' | 'none';
 type ThirdPartyUpdateStrategy = 'none' | 'patch' | 'minor' | 'major';
 type DevDepsUpdateStrategy = 'none' | 'patch' | 'minor' | 'major';
 export type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'max';
-export type SupportedAgentModel = 'sonnet' | 'opus';
+export type AgentProvider = 'claude' | 'github-copilot';
+export type SupportedAgentModel = 'sonnet' | 'opus' | 'gpt-5' | 'gpt-5-mini' | 'mai-code-1.1-flash' | 'mai-code-1-flash-picker';
 
 export const AGENT_MODEL_OPTIONS: ReadonlyArray<{ value: SupportedAgentModel; label: string }> = [
   { value: 'sonnet', label: 'Sonnet' },
   { value: 'opus', label: 'Opus' },
+  { value: 'gpt-5', label: 'GPT-5' },
+  { value: 'gpt-5-mini', label: 'GPT-5 mini' },
+  { value: 'mai-code-1.1-flash', label: 'MAI-Code-1.1-Flash' },
+  { value: 'mai-code-1-flash-picker', label: 'MAI-Code-1-Flash' },
+];
+
+export const AGENT_PROVIDER_OPTIONS: ReadonlyArray<{ value: AgentProvider; label: string }> = [
+  { value: 'claude', label: 'Claude' },
+  { value: 'github-copilot', label: 'GitHub Copilot' },
 ];
 
 export interface PantoumSettings {
@@ -21,7 +31,7 @@ export interface PantoumSettings {
   env_injection_strategy: EnvInjectionStrategy;
 
   // AI Runtime
-  agent_provider: 'claude';
+  agent_provider: AgentProvider;
   agent_model: SupportedAgentModel;
   thinking_effort: ThinkingEffort;
 
@@ -91,8 +101,8 @@ export const SETTING_DESCRIPTIONS: Record<keyof PantoumSettings, string> = {
   target_version: 'The SPFx version your solutions will be upgraded to. Pantoum applies all necessary patches to reach this version.',
   excluded_patches: 'Comma-separated patch IDs (e.g. FN019002) to skip during upgrade. Useful when a specific patch causes issues or is not applicable to your project.',
   env_injection_strategy: 'How environment variables are injected after migrating from Gulp to Heft. "webpack-patch" is the recommended approach — it patches the Webpack config without modifying source code.',
-  agent_provider: 'Pantoum keeps a provider-neutral settings contract, but this public release supports only the Claude runtime. The value is fixed to "claude" for forward compatibility.',
-  agent_model: 'Claude model used by Pantoum Studio. This public release supports "sonnet" and "opus".',
+  agent_provider: 'Selects which AI runtime Pantoum uses for migrations, build-fix loops, and the Studio AI console.',
+  agent_model: 'Model short name for the selected AI runtime. Claude and GitHub Copilot runtimes support different model sets.',
   thinking_effort: 'Controls adaptive thinking intensity. High = deep reasoning (recommended). Max = maximum thinking budget. Medium/Low = faster, cheaper. Off = no thinking. Not available for Haiku models.',
   update_version_numbers: 'Master switch — when off, all version-related updates below (package.json, README, badges, history) are skipped.',
   update_package_json: 'Bumps the MINOR version in package.json (e.g. 1.0.0 → 1.1.0) to reflect the upgrade.',
@@ -130,6 +140,7 @@ export const SETTING_DEPENDENCIES: Partial<Record<keyof PantoumSettings, (keyof 
   update_version_badges: ['update_readme_files'],
   maintain_version_history: ['update_readme_files'],
   version_comment: ['maintain_version_history'],
+  agent_model: ['agent_provider'],
   thinking_effort: ['agent_model'],
   include_dev_deps_complexity: ['analyze_complexity'],
 };

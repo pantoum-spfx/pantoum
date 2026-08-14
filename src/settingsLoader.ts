@@ -13,16 +13,33 @@ import path from 'path';
 import yaml from 'js-yaml';
 import {
   CLAUDE_MODELS,
+  GITHUB_COPILOT_MODELS,
+  AGENT_PROVIDER_LABELS,
   DEFAULT_AGENT_MODEL,
+  DEFAULT_AGENT_PROVIDER,
   buildDefaultSettings,
+  type AgentProvider,
   type PantoumSettingsFlat,
 } from './defaults.js';
+import { inferProviderFromModel } from './adapters/runtimeAdapterFactory.js';
 export type { PantoumSettingsFlat } from './defaults.js';
 
 type LegacyPantoumSettingsFlat = Partial<PantoumSettingsFlat> & {
   claude_model?: string;
 };
-const SUPPORTED_PUBLIC_AGENT_MODELS = ['sonnet', 'opus'] as const;
+const SUPPORTED_AGENT_PROVIDERS = ['claude', 'github-copilot'] as const;
+const SUPPORTED_CLAUDE_AGENT_MODELS = ['sonnet', 'opus'] as const;
+const SUPPORTED_GITHUB_COPILOT_MODELS = ['gpt-5', 'gpt-5-mini', 'mai-code-1.1-flash', 'mai-code-1-flash-picker'] as const;
+
+function normalizeModelKey(model: string): string {
+  return model
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-')
+    .replace(/:+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/\.+/g, '-');
+}
 
 // ============================================================================
 // MODEL MAPPING
@@ -35,12 +52,33 @@ export const CLAUDE_MODEL_MAP: Record<string, string> = {
   haiku: CLAUDE_MODELS.HAIKU,
 };
 
+export const GITHUB_COPILOT_MODEL_MAP: Record<string, string> = {
+  'gpt-5': GITHUB_COPILOT_MODELS.GPT_5,
+  'gpt-5-mini': GITHUB_COPILOT_MODELS.GPT_5_MINI,
+  'mai-code-1.1-flash': GITHUB_COPILOT_MODELS.MAI_CODE_1_1_FLASH,
+  'mai-code-1-1-flash': GITHUB_COPILOT_MODELS.MAI_CODE_1_1_FLASH,
+  'mai-code-1-flash-picker': GITHUB_COPILOT_MODELS.MAI_CODE_1_FLASH_PICKER,
+};
+
 /**
  * Resolve a model shortname (e.g. "opus") to a full model ID.
  * Returns the input unchanged if it's already a full model ID.
  */
-export function resolveModelId(model: string): string {
-  return CLAUDE_MODEL_MAP[model.toLowerCase()] || model;
+export function resolveModelId(model: string, provider: AgentProvider = DEFAULT_AGENT_PROVIDER): string {
+  const lower = normalizeModelKey(model);
+  if (provider === 'github-copilot') {
+    if (lower in GITHUB_COPILOT_MODEL_MAP) return GITHUB_COPILOT_MODEL_MAP[lower];
+    if (lower.includes('mai') && lower.includes('1-1')) return GITHUB_COPILOT_MODELS.MAI_CODE_1_1_FLASH;
+    if (lower.includes('mai') || lower.includes('flash') || lower.includes('picker')) return GITHUB_COPILOT_MODELS.MAI_CODE_1_FLASH_PICKER;
+    if (lower.includes('mini')) return GITHUB_COPILOT_MODELS.GPT_5_MINI;
+    if (lower.includes('gpt') && lower.includes('5')) return GITHUB_COPILOT_MODELS.GPT_5;
+    return model;
+  }
+  return CLAUDE_MODEL_MAP[lower] || model;
+}
+
+export function getAgentDisplayName(provider: AgentProvider): string {
+  return AGENT_PROVIDER_LABELS[provider] ?? AGENT_PROVIDER_LABELS[DEFAULT_AGENT_PROVIDER];
 }
 
 // ============================================================================
@@ -177,7 +215,13 @@ export function resolveSettings(
     }
   }
 
-  merged.agent_provider = 'claude';
+  // Keep the model consistent with the finally-resolved provider: a Claude short name
+  // must not leak into a Copilot run (and vice versa).
+  merged.agent_provider = normalizeAgentProvider(String(merged.agent_provider ?? DEFAULT_AGENT_PROVIDER));
+  merged.agent_model = normalizeAgentModel(
+    String(merged.agent_model ?? DEFAULT_AGENT_MODEL),
+    merged.agent_provider,
+  );
 
   return merged;
 }
@@ -213,20 +257,66 @@ function normalizeLoadedSettings(
     normalized.agent_model = legacyModel;
   }
 
-  if (typeof normalized.agent_model === 'string') {
-    normalized.agent_model = normalizeAgentModel(normalized.agent_model);
+  // Only normalize the provider when the layer actually declares one. Injecting a
+  // default here would let an override layer (e.g. CLI flags that only set a model)
+  // silently reset a provider configured in pantoum.settings.yml.
+  let provider: AgentProvider | undefined;
+  if (typeof normalized.agent_provider === 'string') {
+    provider = normalizeAgentProvider(normalized.agent_provider);
+    normalized.agent_provider = provider;
+  } else if (normalized.agent_provider !== undefined) {
+    delete normalized.agent_provider;
   }
 
-  normalized.agent_provider = 'claude';
+  if (typeof normalized.agent_model === 'string') {
+    // A model without an explicit provider still has to reach the right runtime.
+    const modelProvider = provider ?? inferProviderFromModel(normalized.agent_model);
+    if (!provider && modelProvider) {
+      normalized.agent_provider = modelProvider;
+    }
+    normalized.agent_model = normalizeAgentModel(
+      normalized.agent_model,
+      modelProvider ?? DEFAULT_AGENT_PROVIDER,
+    );
+  }
+
   delete normalized.claude_model;
 
   return normalized as Partial<PantoumSettingsFlat>;
 }
 
-function normalizeAgentModel(model: string): PantoumSettingsFlat['agent_model'] {
-  const lower = model.toLowerCase();
+function normalizeAgentProvider(provider: string): AgentProvider {
+  const lower = provider.toLowerCase();
+  if (SUPPORTED_AGENT_PROVIDERS.includes(lower as AgentProvider)) {
+    return lower as AgentProvider;
+  }
 
-  if (SUPPORTED_PUBLIC_AGENT_MODELS.includes(lower as (typeof SUPPORTED_PUBLIC_AGENT_MODELS)[number])) {
+  if (lower === 'github' || lower === 'copilot' || lower === 'githubcopilot') {
+    return 'github-copilot';
+  }
+
+  return DEFAULT_AGENT_PROVIDER;
+}
+
+function normalizeAgentModel(
+  model: string,
+  provider: AgentProvider,
+): PantoumSettingsFlat['agent_model'] {
+  const lower = normalizeModelKey(model);
+
+  if (provider === 'github-copilot') {
+    if (SUPPORTED_GITHUB_COPILOT_MODELS.includes(lower as (typeof SUPPORTED_GITHUB_COPILOT_MODELS)[number])) {
+      return lower as PantoumSettingsFlat['agent_model'];
+    }
+
+    if (lower.includes('mai') && lower.includes('1-1')) return 'mai-code-1.1-flash';
+    if (lower.includes('mai') || lower.includes('flash') || lower.includes('picker')) return 'mai-code-1-flash-picker';
+    if (lower.includes('mini')) return 'gpt-5-mini';
+    if (lower.includes('gpt') && lower.includes('5')) return 'gpt-5';
+    return GITHUB_COPILOT_MODELS.GPT_5;
+  }
+
+  if (SUPPORTED_CLAUDE_AGENT_MODELS.includes(lower as (typeof SUPPORTED_CLAUDE_AGENT_MODELS)[number])) {
     return lower as PantoumSettingsFlat['agent_model'];
   }
 

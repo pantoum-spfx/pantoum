@@ -329,7 +329,7 @@ export const AiConsolePage: React.FC = () => {
       </div>
 
       <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-        Run Claude Code skills interactively with real-time streaming output
+        Run Pantoum AI runtime skills interactively with real-time streaming output
       </Text>
 
       {/* Skill selector */}
@@ -500,9 +500,9 @@ export const AiConsolePage: React.FC = () => {
                 <div className={styles.metricStat}>
                   <div className={styles.metricValue} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                     <MoneyRegular style={{ fontSize: '20px' }} />
-                    ${metrics.costUSD.toFixed(3)}
+                    {metrics.costUSD > 0 ? `$${metrics.costUSD.toFixed(3)}` : 'N/A'}
                   </div>
-                  <Text size={200}>Cost</Text>
+                  <Text size={200}>Cost / quota</Text>
                 </div>
               </div>
             </Card>

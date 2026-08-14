@@ -18,6 +18,7 @@ export interface ReportSummary {
   totalPatches: number;
   patchesApplied: number;
   buildFixAttempts: number;
+  aiActionsCount?: number;
   claudeActionsCount: number;
   hasMarkdown: boolean;
 }
@@ -44,6 +45,7 @@ export interface ReportDetail {
     hasM365CliError: boolean;
     hasBuildErrors: boolean;
     buildFixAttempts: number;
+    aiActionsCount?: number;
     claudeActionsCount: number;
     status: string;
   };
@@ -72,9 +74,12 @@ export interface ReportPatch {
   toLine?: number;
   patchLines?: string[];
   // Claude AI fields
+  aiActions?: ClaudeAction[];
   claudeActions?: ClaudeAction[];
+  aiSummary?: string;
   claudeSummary?: string;
   errorPrompt?: string;
+  aiMetrics?: ClaudeMetrics;
   claudeMetrics?: ClaudeMetrics;
   migrationDetails?: MigrationDetails;
 }

@@ -86,7 +86,7 @@ export const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({ hasEve
   if (!hasEvents) {
     return (
       <span style={{ color: '#858585', display: 'inline-flex', alignItems: 'center' }}>
-        <Spinner size="extra-tiny" style={inlineSpinner} />Waiting for Claude Code...{time}
+        <Spinner size="extra-tiny" style={inlineSpinner} />Waiting for AI runtime...{time}
       </span>
     );
   }
@@ -99,7 +99,7 @@ export const ProcessingIndicator: React.FC<ProcessingIndicatorProps> = ({ hasEve
   }
   return (
     <span style={{ color: '#858585', display: 'inline-flex', alignItems: 'center' }}>
-      <Spinner size="extra-tiny" style={inlineSpinner} />Claude is thinking...{time}
+      <Spinner size="extra-tiny" style={inlineSpinner} />AI runtime is thinking...{time}
     </span>
   );
 };

@@ -4,7 +4,7 @@
 import crypto from 'crypto';
 import * as fs from 'fs';
 import { query as agentQuery, type Options, type HookCallbackMatcher, type HookInput, type HookJSONOutput } from '@anthropic-ai/claude-agent-sdk';
-import type { Tool, ClaudeLogger, ToolCallback, AssistantCallback, AdapterConfig, MigrationMetrics, ResponseWithMetrics } from './types.js';
+import type { Tool, AIRuntimeLogger, ToolCallback, AssistantCallback, AdapterConfig, RuntimeAdapter, RuntimeMetrics, ResponseWithMetrics } from './types.js';
 import { DEFAULTS } from '../constants.js';
 
 /**
@@ -58,7 +58,7 @@ export function claude() {
   return new ClaudeAgentSdkAdapter();
 }
 
-class ClaudeAgentSdkAdapter {
+class ClaudeAgentSdkAdapter implements RuntimeAdapter {
   private config: AdapterConfig;
   private toolCallbacks: ToolCallback[] = [];
   private assistantCallbacks: AssistantCallback[] = [];
@@ -87,7 +87,7 @@ class ClaudeAgentSdkAdapter {
     return this;
   }
 
-  withLogger(logger: ClaudeLogger): this {
+  withLogger(logger: AIRuntimeLogger): this {
     this.config.logger = logger;
     return this;
   }
@@ -182,7 +182,7 @@ class QueryBuilder {
   async asText(returnMetrics?: boolean): Promise<string | ResponseWithMetrics> {
     try {
       // Initialize metrics
-      const metrics: MigrationMetrics = {
+      const metrics: RuntimeMetrics = {
         inputTokens: 0,
         outputTokens: 0,
         totalTokens: 0,
@@ -191,6 +191,7 @@ class QueryBuilder {
         turns: 0,
         toolExecutions: [],
         model: this.config.model,
+        provider: 'claude',
         errors: [],
         permissionDenials: []
       };

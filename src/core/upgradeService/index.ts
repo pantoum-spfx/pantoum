@@ -14,7 +14,12 @@ import type { PatchObject } from '../../schema/patchSchema.js';
 import type { ApplyResult } from '../../patchApplier.js';
 import type { M365UpgradeReport } from '../../schema/m365UpgradeReport.js';
 import { TIMEOUTS, DEFAULTS, type EnvInjectionStrategy } from '../../constants.js';
-import { RETRY_DEFAULTS } from '../../defaults.js';
+import { RETRY_DEFAULTS, type AgentProvider } from '../../defaults.js';
+import {
+  getRuntimeLabel,
+  resolveAgentProvider,
+  setActiveAgentProvider,
+} from '../../adapters/runtimeAdapterFactory.js';
 import { ThirdPartyDependencyService } from '../thirdPartyDependencyService.js';
 import { detectPackageManager, getInstallCommand, getInstallCommandString } from '../../utils/packageManager.js';
 import type { ThirdPartyReport } from '../../schema/thirdPartySchema.js';
@@ -53,6 +58,7 @@ export interface UpgradeOptions {
     silent: boolean;
     aiFixM365Errors: boolean;
     aiFixBuildErrors: boolean;
+    agentProvider?: AgentProvider;
     claudeModel: string;
     updateThirdPartyDeps?: 'none' | 'patch' | 'minor' | 'major';
     updateThirdPartyDevDeps?: 'none' | 'patch';
@@ -154,9 +160,16 @@ export class UpgradeService {
     const startTime = Date.now();
     const startTimestamp = new Date().toISOString();
 
+    // Pin the AI runtime for this process so every downstream call site (patch
+    // generation, error analysis, migrations) reaches the configured SDK.
+    const agentProvider = resolveAgentProvider(flags.claudeModel, flags.agentProvider);
+    setActiveAgentProvider(agentProvider);
+    const runtimeLabel = getRuntimeLabel(agentProvider);
+
     try {
       logger.info('🚀 Starting SPFx upgrade to version %s', targetVersion);
-      
+      logger.info('🤖 AI runtime: %s (model: %s)', runtimeLabel, flags.claudeModel || 'default');
+
       logger.info('📂 Loading manual configuration...');
       const manualAll = loadManualSteps(manualConfig || DEFAULTS.PATCHES_FILE);
       const fullManualConfig = loadManualConfig(manualConfig || DEFAULTS.PATCHES_FILE);
@@ -523,7 +536,7 @@ export class UpgradeService {
       if (cliResult.error && flags.aiFixM365Errors) {
         logger.info('   🔧 Generating patches to fix M365 CLI error...');
 
-        // Let Claude analyze and fix the error
+        // Let the configured AI runtime analyze and fix the error
         await this.patchService.generateErrorPatches(
           absoluteSolutionPath,
           solutionName,
@@ -532,15 +545,18 @@ export class UpgradeService {
           'upgrade-report',
           flags.claudeModel,
           flags.aiFixEslintProperly ?? true,
-          debugReports
+          debugReports,
+          flags.aiMaxRetries,
+          undefined,
+          flags.agentProvider
         );
 
-        // Claude fixes files directly now, so always retry after analysis
+        // The runtime fixes files directly now, so always retry after analysis
         // Add a small delay to ensure file changes are written to disk
         logger.info('   ⏳ Waiting for file changes to sync...');
         await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
 
-        logger.info('   🔁 Retrying M365 CLI after Claude fixes...');
+        logger.info('   🔁 Retrying M365 CLI after AI fixes...');
         const retryResult = await runSpfxUpgrade(absoluteSolutionPath, targetVersion);
 
         if (retryResult.success) {
@@ -605,6 +621,7 @@ export class UpgradeService {
       manualConfig: fullManualConfig,
       versionUpdateOptions: versionUpdateOptions,
       claudeModel: flags.claudeModel,
+      agentProvider: flags.agentProvider,
       envInjectionStrategy: flags.envInjectionStrategy,
       debugReports,
       aiMaxRetries: flags.aiMaxRetries,
@@ -824,7 +841,9 @@ export class UpgradeService {
       manualConfig,
       debugReports,
     } = params;
-    
+
+    const runtimeLabel = getRuntimeLabel(resolveAgentProvider(flags.claudeModel, flags.agentProvider));
+
     const packageJsonPath = path.join(absoluteSolutionPath, 'package.json');
     const packageJsonContent = await fs.promises.readFile(packageJsonPath, 'utf8');
     const packageJson = JSON.parse(packageJsonContent);
@@ -916,15 +935,15 @@ export class UpgradeService {
       debugReports
     );
     
-    // Handle errors with Claude if needed - with retry logic
+    // Handle errors with the AI runtime if needed - with retry logic
     let allClaudeFixes: PatchObject[] = [];
     let finalBuildSuccess = postUpdateBuild.buildErrors.length === 0;
     let finalBuildErrors = postUpdateBuild.buildErrors;
     
     if (postUpdateBuild.buildErrors.length > 0 && flags.aiFixThirdPartyErrors) {
-      logger.info('   → Build failed after updates, invoking Claude to fix breaking changes...');
+      logger.info('   → Build failed after updates, invoking %s to fix breaking changes...', runtimeLabel);
       
-      // Only send Claude the packages we actually updated
+      // Only send the AI runtime the packages we actually updated
       const majorUpdates = eligibleUpdates.filter(u => u.updateType === 'major');
       if (majorUpdates.length > 0) {
         logger.info(`   → ${majorUpdates.length} major update(s) detected, likely causing issues`);
@@ -937,21 +956,24 @@ export class UpgradeService {
       const claudeExecutor = new ClaudeMigrationExecutor();
       
       while (retryCount < MAX_THIRD_PARTY_RETRIES && remainingErrors.length > 0) {
-        logger.info(`   → Claude fix attempt ${retryCount + 1} of ${MAX_THIRD_PARTY_RETRIES}...`);
+        logger.info(`   → ${runtimeLabel} fix attempt ${retryCount + 1} of ${MAX_THIRD_PARTY_RETRIES}...`);
         
         // Generate fixes for current errors
         const claudeFixes = await claudeExecutor.executeThirdPartyMigration(
           absoluteSolutionPath,
           eligibleUpdates,
-          remainingErrors
+          remainingErrors,
+          flags.claudeModel,
+          flags.agentProvider,
+          flags.thinkingEffort
         );
         
         if (claudeFixes.length === 0) {
-          logger.warn('   → Claude could not generate fixes for these errors');
+          logger.warn('   → %s could not generate fixes for these errors', runtimeLabel);
           break; // No point retrying if Claude can't generate fixes
         }
         
-        logger.info(`   → Claude generated ${claudeFixes.length} fix(es), applying...`);
+        logger.info(`   → ${runtimeLabel} generated ${claudeFixes.length} fix(es), applying...`);
         allClaudeFixes.push(...claudeFixes);
 
         const claudeApplyResults = await this.patchService.applyPatches(
@@ -962,7 +984,7 @@ export class UpgradeService {
         );
         const claudeApplyFailed = claudeApplyResults.filter(r => !r.success);
         if (claudeApplyFailed.length > 0) {
-          logger.error('   ❌ %d Claude fix patch(es) failed to apply:', claudeApplyFailed.length);
+          logger.error('   ❌ %d %s fix patch(es) failed to apply:', claudeApplyFailed.length, runtimeLabel);
           claudeApplyFailed.forEach(f => logger.error('      • %s: %s', f.patch.id, f.message));
         }
 
@@ -1002,8 +1024,8 @@ export class UpgradeService {
       // Final status
       if (remainingErrors.length > 0) {
         finalBuildSuccess = false;
-        logger.error('   ✖ Build still failing after %d Claude attempt(s) - manual intervention required', 
-          retryCount + 1);
+        logger.error('   ✖ Build still failing after %d %s attempt(s) - manual intervention required', 
+          retryCount + 1, runtimeLabel);
         logger.error('   → Remaining errors:');
         finalBuildErrors.forEach(err => logger.error(`      ${err}`));
       }
@@ -1035,8 +1057,9 @@ export class UpgradeService {
       const allPatches = [...(report.patches || []), ...(report.buildFixPatches || [])];
 
       for (const patch of allPatches) {
-        if ((patch as any).claudeMetrics) {
-          const metrics = (patch as any).claudeMetrics;
+        const patchMetrics = (patch as any).aiMetrics || (patch as any).claudeMetrics;
+        if (patchMetrics) {
+          const metrics = patchMetrics;
 
           if (!aggregatedMetrics) {
             aggregatedMetrics = {

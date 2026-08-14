@@ -7,9 +7,9 @@ const PATCH_STAGES = ['upgrade', 'post-upgrade', 'build-fix', 'self', 'migration
 type PatchStage = typeof PATCH_STAGES[number];
 
 /**
- * Claude action tracking for audit and reporting
+ * AI action tracking for audit and reporting
  */
-export interface ClaudeAction {
+export interface AIAction {
   timestamp: string;
   tool: string;
   action: string;
@@ -19,18 +19,29 @@ export interface ClaudeAction {
 }
 
 /**
- * Claude execution metrics for cost and performance tracking
+ * AI runtime execution metrics for cost and performance tracking
  */
-export interface ClaudeMetrics {
+export interface AIBilling {
+  unit: 'usd' | 'ai-credit' | 'premium-request' | 'unknown';
+  amount: number;
+  nanoAiu?: number;
+  currency?: string;
+  note?: string;
+}
+
+export interface AIMetrics {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  cacheWriteTokens?: number;
   totalTokens: number;
   costUSD: number;
+  billing?: AIBilling;
   durationMs: number;
   durationApiMs?: number;
   turns: number;
+  modelCalls?: number;
   toolExecutions?: Array<{
     name: string;
     input: unknown;
@@ -39,9 +50,16 @@ export interface ClaudeMetrics {
   }>;
   sessionId?: string;
   model: string;
+  provider?: string;
   errors?: Array<{
     message: string;
     timestamp: string;
+    /** Structured provider-error context (mirrors RuntimeMetrics.errors) — persisted into patch JSON */
+    statusCode?: number;
+    errorCode?: string;
+    errorType?: string;
+    providerCallId?: string;
+    serviceRequestId?: string;
   }>;
   permissionDenials?: Array<{
     tool_name: string;
@@ -101,9 +119,13 @@ export interface MigrationDetails {
       durationMs: number;
       durationApiMs?: number;
       turns: number;
+      modelCalls?: number;
     };
     toolUsage?: Array<{ name: string; input: unknown; timestamp: string; durationMs?: number }>;
     sessionId?: string;
+    provider?: string;
+    billing?: AIBilling;
+    stopReason?: string;
   };
 }
 
@@ -228,13 +250,19 @@ export type PatchObject = BasePatch & (
   | {
     type: "claudeActions";
     file: string;                  // context file (e.g. "MIGRATION_SUMMARY.md")
-    claudeActions: ClaudeAction[]; // detailed action log
-    claudeSummary?: string;        // AI-generated summary of changes
+    aiActions?: AIAction[]; // provider-neutral detailed action log
+    claudeActions?: AIAction[]; // backward-compatible alias
+    aiSummary?: string;          // provider-neutral summary of changes
+    claudeSummary?: string;      // backward-compatible alias
     errorPrompt?: string;          // original error that triggered the fix
-    claudeMetrics?: ClaudeMetrics; // execution metrics
+    aiMetrics?: AIMetrics;         // provider-neutral execution metrics
+    claudeMetrics?: AIMetrics;     // backward-compatible alias
     migrationDetails?: MigrationDetails; // third-party migration info
   }
 );
+
+export type ClaudeAction = AIAction;
+export type ClaudeMetrics = AIMetrics;
 
 /**
  * Wrapper object for LLM output.

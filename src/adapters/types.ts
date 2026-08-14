@@ -1,5 +1,6 @@
-// Types for Claude SDK Adapter
-// Maintains compatibility with InstantlyEasy SDK interface
+// Types for Pantoum AI runtime adapters
+// Maintains compatibility with the existing Claude integration while allowing
+// additional runtimes such as GitHub Copilot.
 
 interface ToolInput {
   file_path?: string;
@@ -24,7 +25,7 @@ export interface Tool {
   input: ToolInput;
 }
 
-export interface ClaudeLogger {
+export interface AIRuntimeLogger {
   log: (entry: any) => void;
   error: (message: string, context?: any) => void;
   warn: (message: string, context?: any) => void;
@@ -40,7 +41,7 @@ export interface AdapterConfig {
   model: string;
   directory: string;
   tools: string[];
-  logger?: ClaudeLogger;
+  logger?: AIRuntimeLogger;
   skipPermissions: boolean;
   debugFile?: string;
   sessionId?: string;
@@ -49,22 +50,63 @@ export interface AdapterConfig {
   persistSession?: boolean;
 }
 
-// Metrics interface for tracking Claude execution performance
-export interface MigrationMetrics {
+export type RuntimeBillingUnit = 'usd' | 'ai-credit' | 'premium-request' | 'unknown';
+
+export interface RuntimeBilling {
+  unit: RuntimeBillingUnit;
+  amount: number;
+  nanoAiu?: number;
+  currency?: string;
+  note?: string;
+}
+
+export interface RuntimeBuildOptions {
+  options: Record<string, unknown>;
+  modelName: string;
+}
+
+export interface RuntimeQuery {
+  asText(): Promise<string>;
+  asText(returnMetrics: true): Promise<ResponseWithMetrics>;
+  asText(returnMetrics?: boolean): Promise<string | ResponseWithMetrics>;
+}
+
+export interface RuntimeAdapter {
+  withModel(model: string): this;
+  inDirectory(path: string): this;
+  allowTools(...tools: string[]): this;
+  withLogger(logger: AIRuntimeLogger): this;
+  onToolUse(callback: ToolCallback): this;
+  onAssistant(callback: AssistantCallback): this;
+  skipPermissions(): this;
+  withDebugFile(path: string): this;
+  withSessionId(sessionId: string): this;
+  withThinkingEffort(effort: string): this;
+  withAbortController(controller: AbortController): this;
+  withPersistSession(persist: boolean): this;
+  buildOptions(): RuntimeBuildOptions;
+  query(prompt: string): RuntimeQuery;
+}
+
+// Metrics interface for tracking AI runtime execution performance
+export interface RuntimeMetrics {
   // Token usage
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  cacheWriteTokens?: number;
   totalTokens: number;
 
-  // Cost tracking
+  // Billing / usage tracking
   costUSD: number;
+  billing?: RuntimeBilling;
 
   // Performance metrics
   durationMs: number;
   durationApiMs?: number;
   turns: number;
+  modelCalls?: number;
 
   // Tool usage tracking
   toolExecutions: Array<{
@@ -77,6 +119,7 @@ export interface MigrationMetrics {
   // Session info
   sessionId?: string;
   model: string;
+  provider?: string;
 
   // Stop reason (why the model stopped: 'end_turn', 'max_tokens', etc.)
   stopReason?: string;
@@ -85,6 +128,13 @@ export interface MigrationMetrics {
   errors?: Array<{
     message: string;
     timestamp: string;
+    /** HTTP status of a provider/session error (e.g. 400 for an Azure content-policy rejection) */
+    statusCode?: number;
+    errorCode?: string;
+    errorType?: string;
+    /** Provider-side correlation ids — required to follow up a content-policy rejection */
+    providerCallId?: string;
+    serviceRequestId?: string;
   }>;
 
   // Permission denials
@@ -97,5 +147,8 @@ export interface MigrationMetrics {
 // Response with metrics
 export interface ResponseWithMetrics {
   response: string;
-  metrics: MigrationMetrics;
+  metrics: RuntimeMetrics;
 }
+
+export type MigrationMetrics = RuntimeMetrics;
+export type ClaudeLogger = AIRuntimeLogger;

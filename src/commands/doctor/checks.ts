@@ -179,6 +179,7 @@ export function checkAgentSdk(): CheckResult {
             value: pkg.version,
           };
         }
+
       }
 
       const parent = path.dirname(dir);
@@ -190,6 +191,49 @@ export function checkAgentSdk(): CheckResult {
   } catch {
     return {
       name: 'Agent SDK',
+      status: 'error',
+      value: 'not found',
+      message: 'Run npm install to restore dependencies',
+    };
+  }
+}
+
+/**
+ * Check GitHub Copilot SDK version
+ */
+export function checkGitHubCopilotSdk(): CheckResult {
+  const SDK_NAME = '@github/copilot-sdk';
+
+  try {
+    let dir = path.dirname(require.resolve(SDK_NAME));
+
+    for (let depth = 0; depth < 8; depth++) {
+      const candidate = path.join(dir, 'package.json');
+
+      if (fs.existsSync(candidate)) {
+        const pkg = JSON.parse(fs.readFileSync(candidate, 'utf8')) as {
+          name?: string;
+          version?: string;
+        };
+
+        if (pkg.name === SDK_NAME && pkg.version) {
+          return {
+            name: 'GitHub Copilot SDK',
+            status: 'ok',
+            value: pkg.version,
+          };
+        }
+      }
+
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+
+    throw new Error(`Could not locate package.json for ${SDK_NAME}`);
+  } catch {
+    return {
+      name: 'GitHub Copilot SDK',
       status: 'error',
       value: 'not found',
       message: 'Run npm install to restore dependencies',
@@ -246,7 +290,7 @@ export function runAllChecks(): {
   return {
     system: [checkNodeVersion(), checkNpmVersion(), checkPlatform(), checkTerminal()],
     dependencies: [checkM365Cli()],
-    ai: [checkClaudeCode(), checkAgentSdk(), checkApiKey()],
+    ai: [checkClaudeCode(), checkAgentSdk(), checkGitHubCopilotSdk(), checkApiKey()],
     pantoum: [checkPantoumVersion()],
   };
 }

@@ -39,7 +39,7 @@ async function importSettingsLoader(): Promise<{
   loadSettingsFile: (searchDir: string, cwd?: string) => Partial<Record<string, unknown>>;
   resolveSettings: (fileSettings: Partial<Record<string, unknown>>, overrides?: Partial<Record<string, unknown>>) => Record<string, unknown>;
   settingsToCamelCase: (settings: Record<string, unknown>) => Record<string, unknown>;
-  resolveModelId: (model: string) => string;
+  resolveModelId: (model: string, provider?: 'claude' | 'github-copilot') => string;
 }> {
   const mod = await import(/* @vite-ignore */ path.join(CORE_ROOT, 'src/settingsLoader.js'));
   return mod;
@@ -53,11 +53,11 @@ async function loadSettings(settingsOverrides?: Record<string, unknown>) {
   const { loadSettingsFile, resolveSettings, settingsToCamelCase, resolveModelId } = await importSettingsLoader();
   const fileSettings = loadSettingsFile(CORE_ROOT);
   const resolved = resolveSettings(fileSettings, settingsOverrides as any);
-  if ((resolved.agent_provider as string) !== 'claude') {
-    throw new Error(`Unsupported agent provider "${String(resolved.agent_provider)}". This public release supports only "claude".`);
-  }
   const cliArgs = settingsToCamelCase(resolved);
-  const claudeModel = resolveModelId((resolved.agent_model as string) || 'sonnet');
+  const claudeModel = resolveModelId(
+    (resolved.agent_model as string) || 'sonnet',
+    (resolved.agent_provider as 'claude' | 'github-copilot' | undefined) ?? 'claude',
+  );
   const thinkingEffort = (resolved.thinking_effort as string) || 'high';
   return { cliArgs, claudeModel, thinkingEffort };
 }
@@ -512,6 +512,7 @@ export class UpgradeOrchestrator {
         silent: false,
         aiFixM365Errors: cliArgs.aiFixM365Errors as boolean ?? false,
         aiFixBuildErrors: cliArgs.aiFixBuildErrors as boolean ?? false,
+        agentProvider: cliArgs.agentProvider as 'claude' | 'github-copilot' | undefined,
         claudeModel,
         thinkingEffort,
         updateThirdPartyDeps: cliArgs.updateThirdPartyDeps as 'none' | 'patch' | 'minor' | 'major',

@@ -1,11 +1,35 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { logger } from '../../utils/logger.js';
-import type { PatchObject, ClaudeAction } from '../../schema/patchSchema.js';
+import type { PatchObject, AIAction } from '../../schema/patchSchema.js';
 import { DEFAULTS, FILE_PATTERNS, SPFX_CONFIG_FILES } from '../../constants.js';
 import { ESLINT_DEFAULTS, RETRY_DEFAULTS } from '../../defaults.js';
 import type { PatchRepository } from '../patchRepository.js';
-import { renderTemplate, type TemplateVariables } from '../../utils/templateLoader.js';
+import {
+  createRuntimeAdapter,
+  getRuntimeLabel,
+  resolveAgentProvider,
+  resolveRuntimeModel,
+} from '../../adapters/runtimeAdapterFactory.js';
+import type { AgentProvider } from '../../defaults.js';
+import { renderTemplate, type TemplateName, type TemplateVariables } from '../../utils/templateLoader.js';
+
+function isFileEditingBashCommand(command: string | undefined): boolean {
+  if (!command) return false;
+  return (
+    /(?:^|\s)(?:cat|tee)\b[\s\S]*?>/.test(command) ||
+    /apply_patch/.test(command) ||
+    /(?:^|\s)sed\b[\s\S]*?-i\b/.test(command) ||
+    /(?:^|\s)perl\b[\s\S]*?-pi\b/.test(command) ||
+    /(?:^|\s)node\b[\s\S]*(?:writeFileSync|appendFileSync|mkdirSync)/.test(command)
+  );
+}
+
+function isEditingAction(action: { tool?: string; target?: string }): boolean {
+  return action.tool === 'Edit' ||
+    action.tool === 'MultiEdit' ||
+    (action.tool === 'Bash' && isFileEditingBashCommand(action.target));
+}
 
 interface ErrorContext {
   solutionPath: string;
@@ -16,6 +40,7 @@ interface ErrorContext {
   stage: 'build-fix' | 'post-upgrade';
   aiFixEslintProperly?: boolean;
   aiMaxRetries?: number;
+  agentProvider?: AgentProvider;
   /** Set when the "failure" was forced by a warnings check on a SUCCESSFUL build —
    *  selects the warnings-cleanup prompt instead of the build-error prompt. */
   cleanupReason?: 'typescript' | 'sass' | 'eslint';
@@ -235,14 +260,18 @@ export class ErrorAnalyzer {
     errorType?: 'upgrade-report' | 'build' | 'test' | 'runtime',
     runDirectory?: string,
     debugReports?: boolean,
-    thinkingEffort?: string
-  ): Promise<{ patches: PatchObject[], actions: ClaudeAction[], claudeSummary?: string, metrics?: import('../../adapters/types.js').MigrationMetrics }> {
-    const claudeActions: ClaudeAction[] = [];
+    thinkingEffort?: string,
+    agentProvider?: AgentProvider
+  ): Promise<{ patches: PatchObject[], actions: AIAction[], claudeSummary?: string, metrics?: import('../../adapters/types.js').RuntimeMetrics }> {
+    const claudeActions: AIAction[] = [];
+    const provider = resolveAgentProvider(model, agentProvider);
+    const runtimeModel = resolveRuntimeModel(model, provider);
+    const runtimeLabel = getRuntimeLabel(provider);
     
     try {
-      logger.info('🤖 Claude Code analyzing %s errors...', analysisPrompt.includes('build') ? 'build' : 'error');
+      logger.info('🤖 %s analyzing %s errors...', runtimeLabel, analysisPrompt.includes('build') ? 'build' : 'error');
       
-      // Create custom logger that implements the Claude SDK Logger interface
+      // Create custom logger that implements the runtime adapter Logger interface
       const errorFixLogger = {
         log: (entry: any) => {
           // Filter out debug-level "Received message" logs
@@ -255,40 +284,38 @@ export class ErrorAnalyzer {
           // Log other messages
           if (entry && typeof entry === 'object' && 'message' in entry) {
             const level = entry.level !== undefined ? `[${entry.level}]` : '';
-            const msg = `   [Claude]${level}: ${entry.message}`;
+            const msg = `   [${runtimeLabel}]${level}: ${entry.message}`;
             logger.info(msg);
           } else if (typeof entry === 'string' && !entry.includes('Received message')) {
-            logger.info(`   [Claude]: ${entry}`);
+            logger.info(`   [${runtimeLabel}]: ${entry}`);
           }
         },
-        error: (message: string, _context?: Record<string, any>) => logger.error(`   [Claude Error]: ${message}`),
-        warn: (message: string, _context?: Record<string, any>) => logger.warn(`   [Claude Warning]: ${message}`),
-        info: (message: string, _context?: Record<string, any>) => logger.info(`   [Claude]: ${message}`),
+        error: (message: string, _context?: Record<string, any>) => logger.error(`   [${runtimeLabel} Error]: ${message}`),
+        warn: (message: string, _context?: Record<string, any>) => logger.warn(`   [${runtimeLabel} Warning]: ${message}`),
+        info: (message: string, _context?: Record<string, any>) => logger.info(`   [${runtimeLabel}]: ${message}`),
         debug: (message: string, _context?: Record<string, any>) => {
           // Filter out "Received message" debug logs
           if (!message.includes('Received message')) {
-            logger.info(`   [Claude Debug]: ${message}`);
+            logger.info(`   [${runtimeLabel} Debug]: ${message}`);
           }
         },
         trace: (message: string, _context?: Record<string, any>) => {
           // Usually we don't need trace level
           if (!message.includes('Received message')) {
-            logger.info(`   [Claude Trace]: ${message}`);
+            logger.info(`   [${runtimeLabel} Trace]: ${message}`);
           }
         }
       };
       
-      // Import Claude Agent SDK (supports both subscription and ANTHROPIC_API_KEY auth)
-      const { claude } = await import('../../adapters/claudeAgentSdkAdapter.js');
+      const runtime = await createRuntimeAdapter(provider);
 
-      // Execute Claude Code with direct file editing
-      logger.info('   → Starting error analysis with Claude Code...');
+      logger.info('   → Starting error analysis with %s (model: %s)...', runtimeLabel, runtimeModel);
 
       const sessionLabel = `error_${errorType || 'unknown'}_${Date.now()}`;
 
       // For upgrade-report errors, don't allow Bash to prevent build attempts
-      let claudeInstance = claude()
-        .withModel(model)
+      let claudeInstance = runtime
+        .withModel(runtimeModel)
         .inDirectory(solutionPath)
         .withSessionId(`pantoum_${sessionLabel}`)
         .withLogger(errorFixLogger);
@@ -296,7 +323,7 @@ export class ErrorAnalyzer {
       // SDK-native debug trace file (when --debugReports is enabled)
       if (debugReports && runDirectory) {
         claudeInstance = claudeInstance.withDebugFile(
-          path.join(runDirectory, `claude_debug_${sessionLabel}.jsonl`)
+          path.join(runDirectory, `ai_debug_${sessionLabel}.jsonl`)
         );
       }
 
@@ -378,7 +405,7 @@ export class ErrorAnalyzer {
           }
           
           // Track the action
-          const action: ClaudeAction = {
+          const action: AIAction = {
             timestamp: new Date().toISOString(),
             tool: tool.name,
             action: tool.name.toLowerCase(),
@@ -396,13 +423,13 @@ export class ErrorAnalyzer {
           claudeActions.push(action);
 
           // Action tracking - warn at milestones but don't abort
-          // Claude edits files directly, so even many actions can be legitimate
+          // The runtime edits files directly, so even many actions can be legitimate
           if (claudeActions.length === 20) {
-            logger.warn('   ⚠️ Claude has made 20 actions');
+            logger.warn('   ⚠️ %s has made 20 actions', runtimeLabel);
           } else if (claudeActions.length === 40) {
-            logger.warn('   ⚠️ Claude has made 40 actions - this is taking a while');
+            logger.warn('   ⚠️ %s has made 40 actions - this is taking a while', runtimeLabel);
           } else if (claudeActions.length === 60) {
-            logger.warn('   ⚠️ Claude has made 60 actions - complex solution');
+            logger.warn('   ⚠️ %s has made 60 actions - complex solution', runtimeLabel);
           }
         })
         .onAssistant((content) => {
@@ -413,7 +440,7 @@ export class ErrorAnalyzer {
               // Just log the first line as a summary
               const firstLine = lines[0].substring(0, 100);
               if (firstLine.length > 10) {
-                logger.info(`   💭 Claude: ${firstLine}${firstLine.length >= 100 ? '...' : ''}`);
+                logger.info(`   💭 ${runtimeLabel}: ${firstLine}${firstLine.length >= 100 ? '...' : ''}`);
               }
             }
           }
@@ -450,12 +477,12 @@ export class ErrorAnalyzer {
         response = typeof claudeResult === 'string' ? claudeResult : claudeResult.response;
       }
 
-      logger.info('✅ Claude Code completed error fixes');
+      logger.info('✅ %s completed error fixes', runtimeLabel);
       
       // Log summary of actions
       if (claudeActions.length > 0) {
         logger.info('   📊 Summary: %d actions performed', claudeActions.length);
-        const editCount = claudeActions.filter(a => a.tool === 'Edit').length;
+        const editCount = claudeActions.filter(a => isEditingAction(a)).length;
         const readCount = claudeActions.filter(a => a.tool === 'Read').length;
         if (editCount > 0) logger.info('      • %d files edited', editCount);
         if (readCount > 0) logger.info('      • %d files read', readCount);
@@ -503,14 +530,14 @@ export class ErrorAnalyzer {
           }
         }
       } catch (err) {
-        logger.warn('   → Failed to extract Claude summary: %s', err);
+        logger.warn('   → Failed to extract %s summary: %s', runtimeLabel, err);
       }
       
-      // Save Claude debug output to file
+      // Save AI runtime debug output to file
       try {
         // Save to run directory if provided, otherwise to solution directory
         const debugDir = runDirectory || solutionPath;
-        const debugPath = path.join(debugDir, `claude_debug_${errorType}_${Date.now()}.json`);
+        const debugPath = path.join(debugDir, `ai_debug_${errorType}_${Date.now()}.json`);
         const debugContent = {
           timestamp: new Date().toISOString(),
           solutionPath,
@@ -521,24 +548,24 @@ export class ErrorAnalyzer {
           claudeSummary: claudeSummary,
           summary: {
             totalActions: claudeActions.length,
-            edits: claudeActions.filter(a => a.tool === 'Edit').length,
+            edits: claudeActions.filter(a => isEditingAction(a)).length,
             reads: claudeActions.filter(a => a.tool === 'Read').length,
             bashCommands: claudeActions.filter(a => a.tool === 'Bash').length
           }
         };
         fs.mkdirSync(path.dirname(debugPath), { recursive: true });
         fs.writeFileSync(debugPath, JSON.stringify(debugContent, null, 2), DEFAULTS.ENCODING);
-        logger.info('   → Claude debug output saved: %s', debugPath);
+        logger.info('   → %s debug output saved: %s', runtimeLabel, debugPath);
 
         // Register the file with patchRepository if available
         if (this.patchRepository) {
           this.patchRepository.registerFile(debugPath);
         }
       } catch (saveErr) {
-        logger.warn('   → Failed to save Claude debug output: %s', saveErr);
+        logger.warn('   → Failed to save %s debug output: %s', runtimeLabel, saveErr);
       }
       
-      // Since Claude fixes files directly, return empty patches array
+      // Since the runtime fixes files directly, return empty patches array
       // The fixes are already applied to the files
       // Include metrics if available
       const result: any = { patches: [], actions: claudeActions, claudeSummary };
@@ -565,17 +592,17 @@ export class ErrorAnalyzer {
       return result;
       
     } catch (error: any) {
-      logger.error('❌ Claude Code analysis failed: %s', error.message || error);
+      logger.error('❌ %s analysis failed: %s', runtimeLabel, error.message || error);
       
       // Log more details about the error
       if (error.exitCode !== undefined) {
-        logger.error('   → Claude exited with code: %d', error.exitCode);
+        logger.error('   → %s exited with code: %d', runtimeLabel, error.exitCode);
       }
       
       // Check for specific error patterns
       if (error.message?.includes('exit code 1')) {
-        logger.error('   → Try running: claude login');
-        logger.error('   → Or check if Claude is still processing');
+        logger.error('   → Try authenticating the selected AI runtime');
+        logger.error('   → Or check if the runtime is still processing');
       }
       
       if (error.message?.includes('timeout')) {
@@ -583,7 +610,7 @@ export class ErrorAnalyzer {
       }
       
       if (error.message?.includes('ENOENT')) {
-        logger.error('   → Claude Code not found - check installation');
+        logger.error('   → %s not found - check installation', runtimeLabel);
       }
       
       // Save analysis for manual review (in run directory if available)
@@ -595,7 +622,7 @@ export class ErrorAnalyzer {
       // Track the error
       claudeActions.push({
         timestamp: new Date().toISOString(),
-        tool: 'ClaudeCode',
+        tool: runtimeLabel,
         action: 'error',
         target: 'analysis',
         details: error.message,

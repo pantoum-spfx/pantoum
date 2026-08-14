@@ -28,6 +28,7 @@ import {
   loadSettingsFile,
   resolveSettings,
   resolveModelId,
+  getAgentDisplayName,
   type PantoumSettingsFlat,
 } from './settingsLoader.js';
 
@@ -51,8 +52,8 @@ interface CliArgs {
   aiFixEslintWarnings?: boolean;
   aiFixEslintProperly?: boolean;
   aiFixTypeScriptWarnings?: boolean;
-  agentProvider?: 'claude';
-  agentModel?: 'sonnet' | 'opus';
+  agentProvider?: 'claude' | 'github-copilot';
+  agentModel?: string;
   claudeModel?: string;
   markdown?: boolean;
   updateThirdPartyDeps?: 'none' | 'patch' | 'minor' | 'major';
@@ -138,12 +139,15 @@ async function runUpgrade(argv: CliArgs) {
   // Merge: defaults < file < CLI flags
   const settings = resolveSettings(fileSettings, overrides);
 
-  if (settings.agent_provider !== 'claude') {
-    throw new Error(`Unsupported agent provider "${settings.agent_provider}". This public release supports only "claude".`);
-  }
-
   // Resolve model shortname to full ID
-  const claudeModel = resolveModelId(settings.agent_model);
+  const resolvedAgentModel = resolveModelId(settings.agent_model, settings.agent_provider);
+
+  logger.info(
+    'AI runtime: %s (provider: %s, model: %s)',
+    getAgentDisplayName(settings.agent_provider),
+    settings.agent_provider,
+    resolvedAgentModel,
+  );
 
   logger.info('Starting upgrade with resolved settings');
 
@@ -165,7 +169,8 @@ async function runUpgrade(argv: CliArgs) {
       silent,
       aiFixM365Errors: settings.ai_fix_m365_errors,
       aiFixBuildErrors: settings.ai_fix_build_errors,
-      claudeModel,
+      agentProvider: settings.agent_provider,
+      claudeModel: resolvedAgentModel,
       updateThirdPartyDeps: settings.update_production_deps,
       updateThirdPartyDevDeps: settings.update_dev_deps as 'none' | 'patch',
       cleanInstallAfterDepUpdate: settings.clean_install_after_updates,
@@ -246,15 +251,15 @@ async function main() {
           // AI Settings
           .option('aiFixM365Errors', {
             type: 'boolean',
-            description: `Use AI (Claude) to fix M365 CLI upgrade errors (default: ${AI_DEFAULTS.FIX_M365_ERRORS})`,
+            description: `Use the selected AI runtime to fix M365 CLI upgrade errors (default: ${AI_DEFAULTS.FIX_M365_ERRORS})`,
           })
           .option('aiFixBuildErrors', {
             type: 'boolean',
-            description: `Use AI (Claude) to fix build/test errors after upgrade (default: ${AI_DEFAULTS.FIX_BUILD_ERRORS})`,
+            description: `Use the selected AI runtime to fix build/test errors after upgrade (default: ${AI_DEFAULTS.FIX_BUILD_ERRORS})`,
           })
           .option('aiFixThirdPartyErrors', {
             type: 'boolean',
-            description: `Use AI (Claude) to fix breaking changes from third-party updates (default: ${AI_DEFAULTS.FIX_THIRD_PARTY_ERRORS})`,
+            description: `Use the selected AI runtime to fix breaking changes from third-party updates (default: ${AI_DEFAULTS.FIX_THIRD_PARTY_ERRORS})`,
           })
           .option('aiFixEslintWarnings', {
             type: 'boolean',
@@ -266,7 +271,7 @@ async function main() {
           })
           .option('aiFixTypeScriptWarnings', {
             type: 'boolean',
-            description: `Use AI (Claude) to fix TypeScript warnings during build (default: ${AI_DEFAULTS.FIX_TYPESCRIPT_WARNINGS})`,
+            description: `Use the selected AI runtime to fix TypeScript warnings during build (default: ${AI_DEFAULTS.FIX_TYPESCRIPT_WARNINGS})`,
           })
           .option('aiMaxRetries', {
             type: 'number',
@@ -274,13 +279,13 @@ async function main() {
           })
           .option('agentProvider', {
             type: 'string',
-            choices: ['claude'] as const,
-            description: 'AI runtime (this public release currently supports only "claude")',
+            choices: ['claude', 'github-copilot'] as const,
+            description: `AI runtime: "${getAgentDisplayName('claude')}" or "${getAgentDisplayName('github-copilot')}"`,
           })
           .option('agentModel', {
             type: 'string',
-            choices: ['sonnet', 'opus'] as const,
-            description: 'Claude model for this public release: "sonnet" (default) or "opus"',
+            choices: ['sonnet', 'opus', 'gpt-5', 'gpt-5-mini', 'mai-code-1.1-flash', 'mai-code-1-flash-picker'] as const,
+            description: 'Model short name for the selected runtime',
           })
           .option('markdown', {
             type: 'boolean',

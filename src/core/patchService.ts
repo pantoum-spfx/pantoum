@@ -8,11 +8,28 @@ import type { ManualStep, ManualConfig } from '../schema/manualConfig.js';
 import { PatchRepository } from './patchRepository.js';
 import { ErrorAnalyzer } from './errorAnalyzer/index.js';
 import { DEFAULTS, type EnvInjectionStrategy } from '../constants.js';
+import type { AgentProvider } from '../defaults.js';
+import {
+  getRuntimeLabel,
+  resolveAgentProvider,
+  resolveRuntimeModel,
+} from '../adapters/runtimeAdapterFactory.js';
 import { ClaudeMigrationExecutor } from './claudeMigrationExecutor.js';
 import { VersionUpdateService } from './versionUpdateService.js';
 import { getRenderedTemplates, clearTemplateLog } from '../utils/templateLoader.js';
 import * as fs from 'fs';
 import * as path from 'path';
+
+function isFileEditingBashCommand(command: string | undefined): boolean {
+  if (!command) return false;
+  return (
+    /(?:^|\s)(?:cat|tee)\b[\s\S]*?>/.test(command) ||
+    /apply_patch/.test(command) ||
+    /(?:^|\s)sed\b[\s\S]*?-i\b/.test(command) ||
+    /(?:^|\s)perl\b[\s\S]*?-pi\b/.test(command) ||
+    /(?:^|\s)node\b[\s\S]*(?:writeFileSync|appendFileSync|mkdirSync)/.test(command)
+  );
+}
 
 interface GeneratePatchesOptions {
   solutionPath: string;
@@ -24,6 +41,7 @@ interface GeneratePatchesOptions {
   manualConfig?: ManualConfig;
   versionUpdateOptions?: import('./versionUpdateService.js').VersionUpdateOptions;
   claudeModel?: string;
+  agentProvider?: AgentProvider;
   envInjectionStrategy?: EnvInjectionStrategy;
   debugReports?: boolean;
   aiMaxRetries?: number;
@@ -60,6 +78,10 @@ export class PatchService {
       envInjectionStrategy,
     } = options;
 
+    const agentProvider = resolveAgentProvider(options.claudeModel, options.agentProvider);
+    const agentModel = resolveRuntimeModel(options.claudeModel, agentProvider);
+    const runtimeLabel = getRuntimeLabel(agentProvider);
+
     const allPatches: PatchObject[] = [];
 
     // 1) Generate patches deterministically
@@ -84,7 +106,7 @@ export class PatchService {
         const aiContext = manualConfig.aiContexts[contextKey];
 
         if (aiContext) {
-          logger.info('🔄 Patch %s requires Claude migration analysis (context: %s)', patch.id, contextKey);
+          logger.info('🔄 Patch %s requires AI migration analysis (context: %s)', patch.id, contextKey);
 
           // Enhance context with patch-specific details (e.g., envInjectionDetails, scssDetails)
           // CRITICAL: Pass the actual SPFx target version to prevent Claude from guessing
@@ -113,18 +135,19 @@ export class PatchService {
             'gulp',  // from (build system)
             targetVersion,  // to = actual SPFx target version (e.g., "1.22.1")
             enhancedContext,
-            options.claudeModel || DEFAULTS.CLAUDE_MODEL,
+            agentModel,
             runDirectory,
             options.debugReports,
             options.aiMaxRetries,
-            options.thinkingEffort
+            options.thinkingEffort,
+            agentProvider
           );
 
           // Add migration patches to auto patches
           migrationPatches.forEach(p => p.stage = 'upgrade');
           autoPatches.push(...migrationPatches);
 
-          logger.info('   ✅ Claude migration completed, generated %d additional patches', migrationPatches.length);
+          logger.info('   ✅ %s migration completed, generated %d additional patches', runtimeLabel, migrationPatches.length);
         }
       }
     }
@@ -154,7 +177,7 @@ export class PatchService {
     logger.info('PIPELINE:4:post:event=start');
 
     for (const step of postSteps) {
-      const patches = await this.processManualStep(step, solutionPath, targetVersion, manualConfig, options.claudeModel, options.debugReports, options.aiMaxRetries);
+      const patches = await this.processManualStep(step, solutionPath, targetVersion, manualConfig, agentModel, options.debugReports, options.aiMaxRetries, agentProvider);
       patches.forEach(p => p.stage = 'post-upgrade');
       allPatches.push(...patches);
     }
@@ -254,9 +277,12 @@ export class PatchService {
     aiFixEslintProperly: boolean = true,
     debugReports?: boolean,
     aiMaxRetries?: number,
-    cleanupReason?: 'typescript' | 'sass' | 'eslint'
+    cleanupReason?: 'typescript' | 'sass' | 'eslint',
+    agentProvider?: AgentProvider
   ): Promise<PatchObject[]> {
-    logger.info('🤖 Analyzing %s errors with Claude Code...', errorType);
+    const provider = resolveAgentProvider(model, agentProvider);
+    const runtimeModel = resolveRuntimeModel(model, provider);
+    logger.info('🤖 Analyzing %s errors with %s...', errorType, getRuntimeLabel(provider));
     logger.info('   → Error output preview: %s...', errorOutput.substring(0, 200));
 
     const errorContext = {
@@ -268,23 +294,26 @@ export class PatchService {
       stage: errorType === 'upgrade-report' ? 'build-fix' : 'post-upgrade',
       aiFixEslintProperly,
       aiMaxRetries,
+      agentProvider: provider,
       cleanupReason
     } as const;
 
     const analysis = await this.errorAnalyzer.analyzeError(errorContext);
     
-    // Get run directory for saving Claude debug files
+    // Get run directory for saving AI runtime debug files
     const runDirectory = this.patchRepo.getSolutionRunDirectory(solutionName);
-    
-    // Execute Claude Code analysis
+
+    // Execute AI runtime analysis
     const result = await this.errorAnalyzer.executeClaudeCodeAnalysis(
       analysis.analysisPrompt,
       analysis.contextFiles,
       solutionPath,
-      model,
+      runtimeModel,
       errorType,
       runDirectory,
-      debugReports
+      debugReports,
+      undefined,
+      provider
     );
     
     
@@ -294,21 +323,25 @@ export class PatchService {
     if (result.actions.length > 0) {
       // Count only meaningful edit actions
       const editCount = result.actions.filter(a => 
-        a.tool === 'Edit' || a.tool === 'MultiEdit'
+        a.tool === 'Edit' ||
+        a.tool === 'MultiEdit' ||
+        (a.tool === 'Bash' && isFileEditingBashCommand(a.target))
       ).length;
       
       // Save actions as a special patch for reporting
       const actionSummaryPatch: PatchObject = {
-        id: `CLAUDE-${errorType.toUpperCase()}-ACTIONS-${++this.claudeActionCounter}`,
-        title: `Claude Code ${errorType} fixes`,
-        description: `Claude applied ${editCount} fixes to resolve ${errorType} errors`,
+        id: `AI-${errorType.toUpperCase()}-ACTIONS-${++this.claudeActionCounter}`,
+        title: `${getRuntimeLabel(provider)} ${errorType} fixes`,
+        description: `${getRuntimeLabel(provider)} applied ${editCount} fixes to resolve ${errorType} errors`,
         type: 'claudeActions',
-        file: 'CLAUDE_ACTIONS.json',
+        file: 'AI_ACTIONS.json',
         stage: errorType === 'upgrade-report' ? 'build-fix' : 'post-upgrade',
+        aiActions: result.actions,
         claudeActions: result.actions,
+        aiSummary: result.claudeSummary,
         claudeSummary: result.claudeSummary,
         errorPrompt: errorOutput,
-        ...(result.metrics && { claudeMetrics: result.metrics })
+        ...(result.metrics && { aiMetrics: result.metrics, claudeMetrics: result.metrics })
       };
       
       await this.patchRepo.addPatches(solutionName, targetVersion, [actionSummaryPatch]);
@@ -344,7 +377,8 @@ export class PatchService {
     manualConfig?: ManualConfig,
     claudeModel?: string,
     debugReports?: boolean,
-    aiMaxRetries?: number
+    aiMaxRetries?: number,
+    agentProvider?: AgentProvider
   ): Promise<PatchObject[]> {
     // Skip success steps as they are handled separately
     if (step.when === 'success') {
@@ -398,10 +432,11 @@ export class PatchService {
         if (shouldMigrate) {
           const migrationAction = step.type === 'removeDependency' ? 'Removing' : 'Upgrading';
           logger.info('PIPELINE:3:migration:triggered=%s(%s)', step.aiContext, aiContext.template || 'auto');
-          logger.info('   🤖 Performing Claude migration for %s: %s %s', step.packageName, migrationAction,
+          const stepProvider = resolveAgentProvider(claudeModel, agentProvider);
+          logger.info('   🤖 Performing %s migration for %s: %s %s', getRuntimeLabel(stepProvider), step.packageName, migrationAction,
                       step.type === 'removeDependency' ? `(v${fromVersion})` : `v${fromVersion} → v${toVersion}`);
 
-          // Execute migration using Claude Code
+          // Execute migration using the configured AI runtime
           const solutionName = path.basename(solutionPath);
           const runDirectory = this.patchRepo.getSolutionRunDirectory(solutionName);
 
@@ -413,10 +448,12 @@ export class PatchService {
             fromVersion,
             toVersion,
             aiContext,
-            claudeModel || DEFAULTS.CLAUDE_MODEL,
+            resolveRuntimeModel(claudeModel, stepProvider),
             runDirectory,
             debugReports,
             aiMaxRetries,
+            undefined,
+            stepProvider
           );
 
           // Log verification results if available

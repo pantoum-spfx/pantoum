@@ -6,6 +6,7 @@ import { stripAnsiCodes } from '../../utils/textUtils.js';
 import { loadSuccessSteps, conditionMet } from '../../utils/manualLoader.js';
 import { TIMEOUTS, DEFAULTS } from '../../constants.js';
 import { RETRY_DEFAULTS } from '../../defaults.js';
+import { getRuntimeLabel, resolveAgentProvider } from '../../adapters/runtimeAdapterFactory.js';
 import { validateShellCommand } from '../../utils/sanitize.js';
 import { PatchService } from '../patchService.js';
 import type { PatchObject } from '../../schema/patchSchema.js';
@@ -181,6 +182,9 @@ export async function runSuccessSteps(
   const successSteps = loadSuccessSteps(manualConfig || DEFAULTS.PATCHES_FILE)
     .filter(s => conditionMet(s.condition, absoluteSolutionPath));
 
+  const agentProvider = resolveAgentProvider(flags.claudeModel, flags.agentProvider);
+  const runtimeLabel = getRuntimeLabel(agentProvider);
+
   const buildErrors: string[] = [];
   const buildFixPatches: PatchObject[] = [];
 
@@ -232,7 +236,7 @@ export async function runSuccessSteps(
         let forcedCleanup: 'typescript' | 'sass' | 'eslint' | null = null;
         if ((flags.aiFixTypeScriptWarnings !== false) && hasTypeScriptWarnings(output) && result.exitCode === 0) {
           logger.warn('   → TypeScript warnings found, forcing cleanup');
-          result.exitCode = 1; // Force error handling to trigger Claude cleanup
+          result.exitCode = 1; // Force error handling to trigger AI cleanup
           forcedCleanup = 'typescript';
         }
 
@@ -240,7 +244,7 @@ export async function runSuccessSteps(
         // These indicate deprecated SCSS patterns that need fixing
         if (hasSassWarnings(output) && result.exitCode === 0) {
           logger.warn('   → Sass deprecation warnings found (declarations after nested rules), forcing cleanup');
-          result.exitCode = 1; // Force error handling to trigger Claude cleanup
+          result.exitCode = 1; // Force error handling to trigger AI cleanup
           forcedCleanup = 'sass';
         }
 
@@ -251,7 +255,7 @@ export async function runSuccessSteps(
         // to zero (fix-vs-suppress then controlled by ai_fix_eslint_properly).
         if (flags.aiFixEslintWarnings === true && hasEslintWarnings(output) && result.exitCode === 0) {
           logger.warn('   → ESLint warnings found and ai_fix_eslint_warnings enabled, forcing cleanup');
-          result.exitCode = 1; // Force error handling to trigger Claude cleanup
+          result.exitCode = 1; // Force error handling to trigger AI cleanup
           forcedCleanup = 'eslint';
         }
 
@@ -339,13 +343,13 @@ export async function runSuccessSteps(
           buildErrors.push(`${step.id}: ${cleanError}`);
           logger.warn('   ❌ %s failed', step.description);
 
-          // Generate patches for build errors using Claude Code (if enabled)
+          // Generate patches for build errors using the configured AI runtime (if enabled)
           if (flags.aiFixBuildErrors && patchService) {
-            logger.info('   🔧 Analyzing build errors with Claude Code...');
+            logger.info('   🔧 Analyzing build errors with %s...', runtimeLabel);
             const claudeStart = Date.now();
 
-            // CRITICAL: Send FULL output to Claude, not pattern-filtered
-            // Claude needs complete context to understand and fix errors
+            // CRITICAL: Send FULL output to the runtime, not pattern-filtered
+            // The runtime needs complete context to understand and fix errors
             let fullErrorOutput = '';
             if (result.stderr) {
               fullErrorOutput += result.stderr;
@@ -358,7 +362,7 @@ export async function runSuccessSteps(
               fullErrorOutput = errorOutput || 'Unknown build error';
             }
 
-            logger.info('   → Sending %d characters of full output to Claude (not filtered)', fullErrorOutput.length);
+            logger.info('   → Sending %d characters of full output to %s (not filtered)', fullErrorOutput.length, runtimeLabel);
             const patches = await patchService.generateErrorPatches(
               absoluteSolutionPath,
               solutionName,
@@ -369,11 +373,12 @@ export async function runSuccessSteps(
               flags.aiFixEslintProperly ?? true,
               debugReports,
               flags.aiMaxRetries,
-              forcedCleanup ?? undefined
+              forcedCleanup ?? undefined,
+              agentProvider
             );
 
             buildFixPatches.push(...patches);
-            logger.info('   [Timing] Claude analysis took %ss', ((Date.now() - claudeStart) / 1000).toFixed(1));
+            logger.info('   [Timing] %s analysis took %ss', runtimeLabel, ((Date.now() - claudeStart) / 1000).toFixed(1));
 
             if (patches.length > 0) {
               logger.info('   ✓ Generated %d build fix patches', patches.length);
@@ -427,7 +432,7 @@ export async function runSuccessSteps(
                     newErrorOutput += retryResult.stdout;
                   }
 
-                  // Strip ANSI codes before sending to Claude
+                  // Strip ANSI codes before sending to the AI runtime
                   newErrorOutput = stripAnsiCodes(newErrorOutput);
 
                   // Generate new patches for the new errors
@@ -441,14 +446,15 @@ export async function runSuccessSteps(
                     flags.aiFixEslintProperly ?? true,
                     debugReports,
                     flags.aiMaxRetries,
-                    forcedCleanup ?? undefined
+                    forcedCleanup ?? undefined,
+                    agentProvider
                   );
 
                   if (iterativePatches.length === 0) {
                     logger.warn('   → No additional fixes suggested, stopping iterations');
                     break;
                   }
-                  logger.info('   [Timing] Iteration %d Claude analysis took %ss', retryCount + 1, ((Date.now() - iterStart) / 1000).toFixed(1));
+                  logger.info('   [Timing] Iteration %d %s analysis took %ss', retryCount + 1, runtimeLabel, ((Date.now() - iterStart) / 1000).toFixed(1));
 
                   // Add to the patches array for tracking
                   buildFixPatches.push(...iterativePatches);
@@ -513,12 +519,12 @@ export async function runSuccessSteps(
     }
   }
 
-  // If we had build fixes applied by Claude, run a final verification of all success steps
+  // If we had build fixes applied by the AI runtime, run a final verification of all success steps
   if (buildFixPatches.length > 0 && buildErrors.length > 0) {
     logger.info('');
-    logger.info('   🔍 Running final verification after Claude fixes...');
+    logger.info('   🔍 Running final verification after AI fixes...');
 
-    // Re-run all success steps to verify Claude's fixes
+    // Re-run all success steps to verify the AI fixes
     const remainingErrors: string[] = [];
     for (const step of successSteps) {
       try {
@@ -555,9 +561,9 @@ export async function runSuccessSteps(
     buildErrors.push(...remainingErrors);
 
     if (buildErrors.length === 0) {
-      logger.info('   🎉 All build steps now pass after Claude fixes!');
+      logger.info('   🎉 All build steps now pass after AI fixes!');
     } else {
-      logger.warn('   ⚠️  %d build step(s) still failing after Claude fixes', buildErrors.length);
+      logger.warn('   ⚠️  %d build step(s) still failing after AI fixes', buildErrors.length);
     }
   }
 

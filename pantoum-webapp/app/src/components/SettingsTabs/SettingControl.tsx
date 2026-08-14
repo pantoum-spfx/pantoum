@@ -15,6 +15,7 @@ import {
 import { InfoFilled } from '@fluentui/react-icons';
 import type { PantoumSettings } from '@shared/types/Settings';
 import {
+  AGENT_PROVIDER_OPTIONS,
   AGENT_MODEL_OPTIONS,
   SETTING_DESCRIPTIONS,
   SETTING_DEPENDENCIES,
@@ -121,16 +122,44 @@ export const SettingControl: React.FC<SettingControlProps> = ({ settingKey }) =>
 
     // agent_model dropdown
     if (settingKey === 'agent_model') {
+      const selectedProvider = settings.agent_provider;
+      const providerOptions = AGENT_MODEL_OPTIONS.filter((option) =>
+        selectedProvider === 'github-copilot'
+          ? option.value.startsWith('gpt-5') || option.value.startsWith('mai-code-')
+          : option.value === 'sonnet' || option.value === 'opus',
+      );
       return (
         <Dropdown
-          value={AGENT_MODEL_OPTIONS.find((option) => option.value === value)?.label || 'Sonnet'}
+          value={providerOptions.find((option) => option.value === value)?.label || providerOptions[0]?.label || ''}
           selectedOptions={[value as string]}
           onOptionSelect={(_, data) => {
             if (data.optionValue) updateSetting(settingKey, data.optionValue as any);
           }}
           style={{ minWidth: '180px' }}
         >
-          {AGENT_MODEL_OPTIONS.map((option) => (
+          {providerOptions.map((option) => (
+            <Option key={option.value} value={option.value} text={option.label}>
+              {option.label}
+            </Option>
+          ))}
+        </Dropdown>
+      );
+    }
+
+    if (settingKey === 'agent_provider') {
+      return (
+        <Dropdown
+          value={AGENT_PROVIDER_OPTIONS.find((option) => option.value === value)?.label || 'Claude'}
+          selectedOptions={[value as string]}
+          onOptionSelect={(_, data) => {
+            if (!data.optionValue) return;
+            const nextProvider = data.optionValue as PantoumSettings['agent_provider'];
+            updateSetting('agent_provider', nextProvider);
+            updateSetting('agent_model', nextProvider === 'github-copilot' ? 'mai-code-1.1-flash' : 'sonnet');
+          }}
+          style={{ minWidth: '180px' }}
+        >
+          {AGENT_PROVIDER_OPTIONS.map((option) => (
             <Option key={option.value} value={option.value} text={option.label}>
               {option.label}
             </Option>

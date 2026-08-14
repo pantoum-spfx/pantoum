@@ -100,6 +100,7 @@ function parseRunDir(dirPath: string, dirName: string): ReportSummary | null {
       totalPatches: raw.summary?.totalPatches ?? 0,
       patchesApplied: raw.summary?.patchesApplied ?? 0,
       buildFixAttempts: raw.summary?.buildFixAttempts ?? 0,
+      aiActionsCount: raw.summary?.aiActionsCount ?? raw.summary?.claudeActionsCount ?? 0,
       claudeActionsCount: raw.summary?.claudeActionsCount ?? 0,
       hasMarkdown,
     };

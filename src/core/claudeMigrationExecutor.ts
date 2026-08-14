@@ -8,8 +8,14 @@ import type {
   VerificationSummary,
   VerificationToolCall,
 } from '../schema/verificationSchema.js';
-import { DEFAULTS, TIMEOUTS } from '../constants.js';
-import { VERIFICATION_DEFAULTS } from '../defaults.js';
+import { DEFAULTS } from '../constants.js';
+import {
+  createRuntimeAdapter,
+  getRuntimeLabel,
+  resolveAgentProvider,
+  resolveRuntimeModel,
+} from '../adapters/runtimeAdapterFactory.js';
+import { DEFAULT_AGENT_PROVIDER, VERIFICATION_DEFAULTS, type AgentProvider } from '../defaults.js';
 import { renderTemplate, type TemplateVariables, type TemplateName } from '../utils/templateLoader.js';
 import { sanitizeErrorForLogging, sanitizePathForPrompt } from '../utils/sanitize.js';
 import * as fs from 'fs';
@@ -47,9 +53,13 @@ export class ClaudeMigrationExecutor {
     model: string = DEFAULTS.CLAUDE_MODEL,
     runDirectory?: string,
     debugReports?: boolean,
-    thinkingEffort?: string
+    thinkingEffort?: string,
+    agentProvider?: AgentProvider
   ): Promise<PatchObject[]> {
-    logger.info('🤖 Starting Claude migration for %s: v%s → v%s', packageName, fromVersion, toVersion);
+    const provider = resolveAgentProvider(model, agentProvider);
+    const runtimeModel = resolveRuntimeModel(model, provider);
+    const runtimeLabel = getRuntimeLabel(provider);
+    logger.info('🤖 Starting %s migration for %s: v%s → v%s', runtimeLabel, packageName, fromVersion, toVersion);
     
     // Reset log for this migration
     this.migrationLog = [];
@@ -71,16 +81,16 @@ export class ClaudeMigrationExecutor {
           // Log other messages
           if (entry && typeof entry === 'object' && 'message' in entry) {
             const level = entry.level !== undefined ? `[${entry.level}]` : '';
-            const msg = `   [Claude]${level}: ${entry.message}`;
+            const msg = `   [${runtimeLabel}]${level}: ${entry.message}`;
             logger.info(msg);
             this.parseAndLogAction(entry.message);
           } else if (typeof entry === 'string' && !entry.includes('Received message')) {
-            logger.info(`   [Claude]: ${entry}`);
+            logger.info(`   [${runtimeLabel}]: ${entry}`);
             this.parseAndLogAction(entry);
           }
         },
         error: (message: string, _context?: Record<string, any>) => {
-          logger.error(`   [Claude Error]: ${message}`);
+          logger.error(`   [${runtimeLabel} Error]: ${message}`);
           this.migrationLog.push({
             timestamp: new Date().toISOString(),
             action: 'error',
@@ -88,31 +98,29 @@ export class ClaudeMigrationExecutor {
           });
         },
         warn: (message: string, _context?: Record<string, any>) => {
-          logger.warn(`   [Claude Warning]: ${message}`);
+          logger.warn(`   [${runtimeLabel} Warning]: ${message}`);
         },
         info: (message: string, _context?: Record<string, any>) => {
-          logger.info(`   [Claude Info]: ${message}`);
+          logger.info(`   [${runtimeLabel} Info]: ${message}`);
           this.parseAndLogAction(message);
         },
         debug: (message: string, _context?: Record<string, any>) => {
           // Filter out "Received message" debug logs
           if (!message.includes('Received message')) {
-            logger.info(`   [Claude Debug]: ${message}`);
+            logger.info(`   [${runtimeLabel} Debug]: ${message}`);
           }
         },
         trace: (message: string, _context?: Record<string, any>) => {
           // Usually we don't need trace level
           if (!message.includes('Received message')) {
-            logger.info(`   [Claude Trace]: ${message}`);
+            logger.info(`   [${runtimeLabel} Trace]: ${message}`);
           }
         }
       };
 
-      // Import Claude Agent SDK (supports both subscription and ANTHROPIC_API_KEY auth)
-      const { claude } = await import('../adapters/claudeAgentSdkAdapter.js');
+      const runtime = await createRuntimeAdapter(provider);
 
-      // Execute migration with Claude
-      logger.info('   → Executing migration with Claude Code...');
+      logger.info('   → Executing migration with %s...', runtimeLabel);
 
       // Web browsing disabled — all migration instructions are self-contained
       const allowedTools = ['Read', 'Edit', 'Write', 'Grep', 'LS', 'MultiEdit', 'Bash'] as const;
@@ -120,8 +128,8 @@ export class ClaudeMigrationExecutor {
       // Generate session label for correlation
       const sessionLabel = `migration_${packageName.replace(/[@/]/g, '_')}_${Date.now()}`;
 
-      let claudeInstance = claude()
-        .withModel(model)
+      let claudeInstance = runtime
+        .withModel(runtimeModel)
         .inDirectory(solutionPath)
         .allowTools(...allowedTools)
         .withSessionId(`pantoum_${sessionLabel}`)
@@ -135,7 +143,7 @@ export class ClaudeMigrationExecutor {
       // SDK-native debug trace file (when --debugReports is enabled)
       if (debugReports && runDirectory) {
         claudeInstance = claudeInstance.withDebugFile(
-          path.join(runDirectory, `claude_debug_${sessionLabel}.jsonl`)
+          path.join(runDirectory, `ai_debug_${sessionLabel}.jsonl`)
         );
       }
 
@@ -298,7 +306,7 @@ export class ClaudeMigrationExecutor {
         response = typeof result === 'string' ? result : result.response;
       }
 
-      logger.info('   ✅ Claude Code migration completed successfully!');
+      logger.info('   ✅ %s migration completed successfully!', runtimeLabel);
       
       // Create a summary patch for reporting
       const summaryPatch = this.createMigrationSummaryPatch(
@@ -306,7 +314,8 @@ export class ClaudeMigrationExecutor {
         fromVersion,
         toVersion,
         response,
-        metrics
+        metrics,
+        provider
       );
       
       return [summaryPatch];
@@ -316,7 +325,7 @@ export class ClaudeMigrationExecutor {
       
       // Log more details about the error
       if (error.exitCode !== undefined) {
-        logger.error('   → Claude exited with code: %d', error.exitCode);
+        logger.error('   → %s exited with code: %d', runtimeLabel, error.exitCode);
       }
       if (error.stack) {
         logger.error('   → Stack trace: %s', sanitizeErrorForLogging(error));
@@ -333,7 +342,7 @@ export class ClaudeMigrationExecutor {
         migrationLog: this.migrationLog
       };
 
-      const errorPath = path.join(runDirectory || solutionPath, `pantoum_claude_migration_error_${Date.now()}.json`);
+      const errorPath = path.join(runDirectory || solutionPath, `pantoum_ai_migration_error_${Date.now()}.json`);
       fs.writeFileSync(errorPath, JSON.stringify(errorLog, null, 2), { encoding: DEFAULTS.ENCODING as BufferEncoding, mode: 0o600 });
       logger.error('   → Migration log saved to: %s', errorPath);
       
@@ -368,7 +377,11 @@ export class ClaudeMigrationExecutor {
       isRemoval
     };
 
-    // Build the preamble - use template for removal or standard preamble
+    // One prompt corpus for every provider. Captured Azure 400s (see the
+    // mai_realtimenews_run_20260813 artifacts) show the content filter firing
+    // mid-loop after tool-output turns while the same preamble passed dozens of
+    // requests — the rejection is context-dependent, not template wording, so
+    // per-provider prompt variants are not the mitigation.
     let prompt = isRemoval
       ? renderTemplate('migration-preamble-removal', templateVars)
       : renderTemplate('migration-preamble', templateVars);
@@ -480,7 +493,8 @@ export class ClaudeMigrationExecutor {
     fromVersion: string,
     toVersion: string,
     claudeResponse: string,
-    metrics?: any
+    metrics?: any,
+    provider: AgentProvider = DEFAULT_AGENT_PROVIDER
   ): PatchObject {
     // Extract unique files that were modified
     const filesModified = new Set<string>();
@@ -554,10 +568,11 @@ export class ClaudeMigrationExecutor {
     const patch: PatchObject = {
       id: `MIG-${packageName.replace('@', '').replace('/', '-').toUpperCase()}-COMPLETE`,
       title: `${packageName} Migration to v${toVersion}`,
-      description: `Complete migration from ${fromVersion} to ${toVersion} performed by Claude Code`,
+      description: `Complete migration from ${fromVersion} to ${toVersion} performed by ${getRuntimeLabel(provider)}`,
       type: 'claudeActions',
       file: 'MIGRATION_SUMMARY.md',
       stage: 'post-upgrade',
+      aiActions: claudeActions,
       claudeActions,
       migrationDetails: {
         filesModified: Array.from(filesModified),
@@ -583,6 +598,8 @@ export class ClaudeMigrationExecutor {
             },
             toolUsage: metrics.toolExecutions || [],
             sessionId: metrics.sessionId,
+            provider: metrics.provider || provider,
+            billing: metrics.billing,
             stopReason: metrics.stopReason
           }
         })
@@ -825,8 +842,11 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
     runDirectory?: string,
     iteration: number = 1,
     debugReports?: boolean,
-    migrationContext?: any
+    migrationContext?: any,
+    agentProvider?: AgentProvider
   ): Promise<VerificationResult> {
+    const provider = resolveAgentProvider(model, agentProvider);
+    const runtimeModel = resolveRuntimeModel(model, provider);
     logger.info('🔍 Running migration verification (iteration %d)...', iteration);
 
     const verificationPrompt = this.buildVerificationPrompt(
@@ -860,21 +880,20 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
     const verificationToolCalls: VerificationToolCall[] = [];
 
     try {
-      // Import Claude Agent SDK (supports both subscription and ANTHROPIC_API_KEY auth)
-      const { claude } = await import('../adapters/claudeAgentSdkAdapter.js');
+      const runtime = await createRuntimeAdapter(provider);
 
-      // Execute verification with Claude - WITH TOOL TRACKING
+      // Execute verification with the configured runtime - WITH TOOL TRACKING
       const sessionLabel = `verify_${packageName.replace(/[@/]/g, '_')}_iter${iteration}_${Date.now()}`;
 
-      let claudeInstance = claude()
-        .withModel(model)
+      let claudeInstance = runtime
+        .withModel(runtimeModel)
         .inDirectory(solutionPath)
         .allowTools('Grep', 'Bash', 'Read')
         .withSessionId(`pantoum_${sessionLabel}`);
 
       if (debugReports && runDirectory) {
         claudeInstance = claudeInstance.withDebugFile(
-          path.join(runDirectory, `claude_debug_${sessionLabel}.jsonl`)
+          path.join(runDirectory, `ai_debug_${sessionLabel}.jsonl`)
         );
       }
 
@@ -920,7 +939,7 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
       if (runDirectory) {
         const debugPath = path.join(
           runDirectory,
-          `claude_debug_verification_iter${iteration}_${Date.now()}.json`
+          `ai_debug_verification_iter${iteration}_${Date.now()}.json`
         );
         const debugData = {
           iteration,
@@ -961,7 +980,7 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
       if (runDirectory) {
         const debugPath = path.join(
           runDirectory,
-          `claude_debug_verification_error_iter${iteration}_${Date.now()}.json`
+          `ai_debug_verification_error_iter${iteration}_${Date.now()}.json`
         );
         fs.writeFileSync(debugPath, JSON.stringify({
           iteration,
@@ -1047,34 +1066,42 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
     model: string = DEFAULTS.CLAUDE_MODEL,
     runDirectory?: string,
     iteration: number = 1,
-    debugReports?: boolean
+    debugReports?: boolean,
+    agentProvider?: AgentProvider
   ): Promise<Array<{ file: string; pattern: string; action: string }>> {
-    logger.info('🔧 Running fix phase for %d issues (iteration %d)...', failedChecks.length, iteration);
+    const provider = resolveAgentProvider(model, agentProvider);
+    const runtimeModel = resolveRuntimeModel(model, provider);
+    const runtimeLabel = getRuntimeLabel(provider);
+    logger.info('🔧 Running fix phase for %d issues (iteration %d) via %s (%s)...',
+      failedChecks.length, iteration, runtimeLabel, runtimeModel);
 
     const fixPrompt = this.buildFixPrompt(packageName, failedChecks);
     const fixesApplied: Array<{ file: string; pattern: string; action: string }> = [];
 
     try {
-      // Import Claude Agent SDK (supports both subscription and ANTHROPIC_API_KEY auth)
-      const { claude } = await import('../adapters/claudeAgentSdkAdapter.js');
+      const runtime = await createRuntimeAdapter(provider);
 
       const sessionLabel = `fix_${packageName.replace(/[@/]/g, '_')}_iter${iteration}_${Date.now()}`;
 
-      let claudeInstance = claude()
-        .withModel(model)
+      let claudeInstance = runtime
+        .withModel(runtimeModel)
         .inDirectory(solutionPath)
         .allowTools('Read', 'Edit', 'Grep', 'Write')
         .withSessionId(`pantoum_${sessionLabel}`);
 
       if (debugReports && runDirectory) {
         claudeInstance = claudeInstance.withDebugFile(
-          path.join(runDirectory, `claude_debug_${sessionLabel}.jsonl`)
+          path.join(runDirectory, `ai_debug_${sessionLabel}.jsonl`)
         );
       }
 
       claudeInstance = claudeInstance.onToolUse((tool) => {
-          // Track Edit operations for fix log
-          if (tool.name === 'Edit' && tool.input && typeof tool.input === 'object') {
+          // Surface activity so the fix phase is not silent for minutes
+          logger.info('   🔧 [%s] %s', runtimeLabel, tool.name);
+
+          // Track file-writing operations for the fix log
+          if ((tool.name === 'Edit' || tool.name === 'MultiEdit' || tool.name === 'Write') &&
+              tool.input && typeof tool.input === 'object') {
             const input = tool.input as Record<string, any>;
             if (input.file_path) {
               // Determine which pattern this edit is for
@@ -1085,7 +1112,9 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
               fixesApplied.push({
                 file: input.file_path as string,
                 pattern: matchingCheck?.pattern || 'unknown',
-                action: `Edit: "${(input.old_string as string)?.substring(0, 40)}..." → "${(input.new_string as string)?.substring(0, 40)}..."`
+                action: input.old_string
+                  ? `${tool.name}: "${(input.old_string as string).substring(0, 40)}..." → "${(input.new_string as string)?.substring(0, 40)}..."`
+                  : `${tool.name}: rewrote ${path.basename(input.file_path as string)}`
               });
 
               logger.info('   ✏️ Fix applied to %s', path.basename(input.file_path as string));
@@ -1102,7 +1131,7 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
       if (runDirectory) {
         const debugPath = path.join(
           runDirectory,
-          `claude_debug_fix_iter${iteration}_${Date.now()}.json`
+          `ai_debug_fix_iter${iteration}_${Date.now()}.json`
         );
         fs.writeFileSync(debugPath, JSON.stringify({
           iteration,
@@ -1133,8 +1162,11 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
     runDirectory?: string,
     debugReports?: boolean,
     maxRetries?: number,
-    thinkingEffort?: string
+    thinkingEffort?: string,
+    agentProvider?: AgentProvider
   ): Promise<{ patches: PatchObject[]; verification?: VerificationSummary }> {
+    const provider = resolveAgentProvider(model, agentProvider);
+
     // Step 1: Run initial migration
     const patches = await this.executeMigration(
       solutionPath,
@@ -1145,7 +1177,8 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
       model,
       runDirectory,
       debugReports,
-      thinkingEffort
+      thinkingEffort,
+      provider
     );
 
     // Check if verification is enabled
@@ -1181,7 +1214,8 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
         runDirectory,
         iteration,
         debugReports,
-        migrationContext
+        migrationContext,
+        provider
       );
       allResults.push(result);
       lastResult = result;
@@ -1225,7 +1259,8 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
         model,
         runDirectory,
         iteration,
-        debugReports
+        debugReports,
+        provider
       );
 
       // Store fixes applied in the result for this iteration
@@ -1257,9 +1292,15 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
   async executeThirdPartyMigration(
     solutionPath: string,
     updates: ThirdPartyUpdate[],
-    buildErrors: string[]
+    buildErrors: string[],
+    model: string = DEFAULTS.CLAUDE_MODEL,
+    agentProvider?: AgentProvider,
+    thinkingEffort?: string
   ): Promise<PatchObject[]> {
-    logger.info('🤖 Analyzing third-party update breaking changes...');
+    const provider = resolveAgentProvider(model, agentProvider);
+    const runtimeModel = resolveRuntimeModel(model, provider);
+    const runtimeLabel = getRuntimeLabel(provider);
+    logger.info('🤖 Analyzing third-party update breaking changes with %s...', runtimeLabel);
     
     // Only focus on major updates as they're most likely to cause issues
     const majorUpdates = updates.filter(u => u.updateType === 'major');
@@ -1278,47 +1319,64 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
     try {
       // Reset log
       this.migrationLog = [];
-      
-      // Use simple exec to invoke Claude Code
-      const { execSync } = await import('child_process');
-      
-      // Create a temporary file with the prompt
-      const tempPromptFile = path.join(solutionPath, '.claude-third-party-prompt.txt');
-      fs.writeFileSync(tempPromptFile, prompt, DEFAULTS.ENCODING);
-      
-      logger.info('   → Invoking Claude to analyze and fix breaking changes...');
-      
-      // Execute Claude Code with the prompt
-      // Note: This assumes Claude Code CLI is available
-      try {
-        execSync(`claude-code --path "${solutionPath}" --prompt-file "${tempPromptFile}" --auto-approve`, {
-          cwd: solutionPath,
-          stdio: 'inherit',
-          timeout: TIMEOUTS.CLAUDE_MIGRATION
-        });
-      } catch (error) {
-        logger.warn('   → Claude Code execution completed (may have encountered some issues)');
+
+      const runtime = await createRuntimeAdapter(provider);
+      const sessionLabel = `thirdparty_${Date.now()}`;
+
+      logger.info('   → Invoking %s to analyze and fix breaking changes...', runtimeLabel);
+
+      let runtimeInstance = runtime
+        .withModel(runtimeModel)
+        .inDirectory(solutionPath)
+        .allowTools('Read', 'Edit', 'Write', 'MultiEdit', 'Grep', 'LS')
+        .withSessionId(`pantoum_${sessionLabel}`)
+        .skipPermissions();
+
+      if (thinkingEffort && thinkingEffort !== 'off') {
+        runtimeInstance = runtimeInstance.withThinkingEffort(thinkingEffort);
       }
-      
-      // Clean up temp file
-      try {
-        fs.unlinkSync(tempPromptFile);
-      } catch (e) {
-        logger.info('   → Failed to clean up temp file %s: %s', tempPromptFile, e);
-      }
-      
-      // Log what was changed
-      logger.info('   → Claude migration completed');
-      
+
+      runtimeInstance = runtimeInstance.onToolUse((tool) => {
+        const filePath = tool.input?.file_path || tool.input?.path;
+        if (!filePath) return;
+
+        if (tool.name === 'Edit' || tool.name === 'MultiEdit') {
+          this.migrationLog.push({
+            timestamp: new Date().toISOString(),
+            action: 'edit',
+            file: filePath,
+            details: tool.input?.description || `Edited ${path.basename(filePath)}`
+          });
+        } else if (tool.name === 'Write') {
+          this.migrationLog.push({
+            timestamp: new Date().toISOString(),
+            action: 'write',
+            file: filePath,
+            details: tool.input?.description || `Wrote ${path.basename(filePath)}`
+          });
+        }
+      });
+
+      await runtimeInstance.query(prompt).asText();
+
+      logger.info('   → %s third-party migration completed', runtimeLabel);
+
       // Create patch objects from the migration log
       const patches: PatchObject[] = this.migrationLog
         .filter(entry => entry.action === 'edit' || entry.action === 'write')
         .map((entry, index): PatchObject => ({
-          id: `third-party-claude-fix-${index}`,
+          id: `third-party-ai-fix-${index}`,
           type: 'claudeActions',
           title: `Fix breaking changes from third-party updates`,
           description: entry.details || `Modified ${entry.file}`,
           file: entry.file || '',
+          aiActions: [{
+            timestamp: new Date().toISOString(),
+            tool: entry.action === 'edit' ? 'Edit' : 'Write',
+            action: entry.action,
+            target: entry.file,
+            details: entry.details
+          }],
           claudeActions: [{
             timestamp: new Date().toISOString(),
             tool: entry.action === 'edit' ? 'Edit' : 'Write',
@@ -1327,9 +1385,9 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
             details: entry.details
           }]
         }));
-      
+
       logger.info(`   → Generated ${patches.length} fixes for breaking changes`);
-      
+
       return patches;
     } catch (error) {
       logger.error('Failed to execute third-party migration:', error);

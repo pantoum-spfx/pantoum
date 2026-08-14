@@ -8,9 +8,11 @@ import {
   settingsToCamelCase,
   resolveModelId,
   CLAUDE_MODEL_MAP,
+  GITHUB_COPILOT_MODEL_MAP,
   CLI_FIELD_MAP,
 } from '../settingsLoader.js';
 import { buildDefaultSettings, CLAUDE_MODELS } from '../defaults.js';
+import { inferProviderFromModel } from '../adapters/runtimeAdapterFactory.js';
 
 describe('settingsLoader', () => {
   describe('CLAUDE_MODEL_MAP', () => {
@@ -18,6 +20,15 @@ describe('settingsLoader', () => {
       expect(CLAUDE_MODEL_MAP.sonnet).toBe(CLAUDE_MODELS.SONNET);
       expect(CLAUDE_MODEL_MAP.opus).toBe(CLAUDE_MODELS.OPUS);
       expect(CLAUDE_MODEL_MAP.haiku).toBe(CLAUDE_MODELS.HAIKU);
+    });
+  });
+
+  describe('GITHUB_COPILOT_MODEL_MAP', () => {
+    it('should map shortnames to Copilot model IDs', () => {
+      expect(GITHUB_COPILOT_MODEL_MAP['gpt-5']).toBe('gpt-5');
+      expect(GITHUB_COPILOT_MODEL_MAP['gpt-5-mini']).toBe('gpt-5-mini');
+      expect(GITHUB_COPILOT_MODEL_MAP['mai-code-1.1-flash']).toBe('mai-code-1.1-flash');
+      expect(GITHUB_COPILOT_MODEL_MAP['mai-code-1-flash-picker']).toBe('mai-code-1-flash-picker');
     });
   });
 
@@ -31,6 +42,18 @@ describe('settingsLoader', () => {
     it('should be case-insensitive', () => {
       expect(resolveModelId('SONNET')).toBe(CLAUDE_MODELS.SONNET);
       expect(resolveModelId('Opus')).toBe(CLAUDE_MODELS.OPUS);
+    });
+
+    it('should resolve Copilot models with provider context', () => {
+      expect(resolveModelId('gpt-5', 'github-copilot')).toBe('gpt-5');
+      expect(resolveModelId('GPT-5-MINI', 'github-copilot')).toBe('gpt-5-mini');
+      expect(resolveModelId('MAI-Code-1.1-Flash', 'github-copilot')).toBe('mai-code-1.1-flash');
+    });
+
+    it('should infer Copilot provider for MAI and GPT model IDs', () => {
+      expect(inferProviderFromModel('gpt-5-mini')).toBe('github-copilot');
+      expect(inferProviderFromModel('mai-code-1.1-flash')).toBe('github-copilot');
+      expect(inferProviderFromModel('claude-sonnet-5')).toBe('claude');
     });
 
     it('should pass through full model IDs unchanged', () => {
@@ -152,6 +175,17 @@ describe('settingsLoader', () => {
       expect(settings.agent_model).toBe('opus');
       expect(settings.ai_fix_build_errors).toBe(true);
     });
+
+    it('should preserve github-copilot provider and normalize model', () => {
+      fs.writeFileSync(path.join(tmpDir, 'pantoum.settings.yml'), [
+        'agent_provider: "github-copilot"',
+        'agent_model: "GPT-5-MINI"',
+      ].join('\n'));
+
+      const settings = loadSettingsFile(tmpDir);
+      expect(settings.agent_provider).toBe('github-copilot');
+      expect(settings.agent_model).toBe('gpt-5-mini');
+    });
   });
 
   describe('resolveSettings', () => {
@@ -204,6 +238,60 @@ describe('settingsLoader', () => {
 
     it('should fall back to sonnet for unsupported public model values', () => {
       const settings = resolveSettings({ agent_model: 'haiku' } as any);
+      expect(settings.agent_model).toBe('sonnet');
+    });
+
+    it('should preserve supported github-copilot settings', () => {
+      const settings = resolveSettings({
+        agent_provider: 'github-copilot',
+        agent_model: 'gpt-5-mini',
+      } as any);
+      expect(settings.agent_provider).toBe('github-copilot');
+      expect(settings.agent_model).toBe('gpt-5-mini');
+    });
+
+    it('should normalize github-copilot aliases and fallback model', () => {
+      const settings = resolveSettings({
+        agent_provider: 'copilot',
+        agent_model: 'mini',
+      } as any);
+      expect(settings.agent_provider).toBe('github-copilot');
+      expect(settings.agent_model).toBe('gpt-5-mini');
+    });
+
+    it('should not let a model-only override reset a file-configured provider', () => {
+      const settings = resolveSettings(
+        { agent_provider: 'github-copilot', agent_model: 'gpt-5' } as any,
+        { target_version: '1.23.0' } as any,
+      );
+      expect(settings.agent_provider).toBe('github-copilot');
+      expect(settings.agent_model).toBe('gpt-5');
+    });
+
+    it('should infer the copilot provider from a model-only override', () => {
+      const settings = resolveSettings(
+        { agent_provider: 'claude', agent_model: 'sonnet' } as any,
+        { agent_model: 'mai-code-1.1-flash' } as any,
+      );
+      expect(settings.agent_provider).toBe('github-copilot');
+      expect(settings.agent_model).toBe('mai-code-1.1-flash');
+    });
+
+    it('should keep the model consistent when only the provider is overridden', () => {
+      const settings = resolveSettings(
+        { agent_provider: 'claude', agent_model: 'sonnet' } as any,
+        { agent_provider: 'github-copilot' } as any,
+      );
+      expect(settings.agent_provider).toBe('github-copilot');
+      expect(settings.agent_model).toBe('gpt-5');
+    });
+
+    it('should fall back to a claude model when switching back to claude', () => {
+      const settings = resolveSettings(
+        { agent_provider: 'github-copilot', agent_model: 'gpt-5-mini' } as any,
+        { agent_provider: 'claude' } as any,
+      );
+      expect(settings.agent_provider).toBe('claude');
       expect(settings.agent_model).toBe('sonnet');
     });
   });

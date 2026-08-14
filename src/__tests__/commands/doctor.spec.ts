@@ -139,6 +139,19 @@ describe('doctor checks', () => {
     });
   });
 
+  describe('checkGitHubCopilotSdk', () => {
+    it('should return ok when GitHub Copilot SDK is available', async () => {
+      vi.doMock('child_process', () => ({ execSync: vi.fn() }));
+
+      const { checkGitHubCopilotSdk } = await import('../../commands/doctor/checks.js');
+      const result = checkGitHubCopilotSdk();
+
+      expect(result.status).toBe('ok');
+      expect(result.name).toBe('GitHub Copilot SDK');
+      expect(result.value).toMatch(/\d+\.\d+\.\d+/);
+    });
+  });
+
   describe('checkApiKey', () => {
     const originalEnv = process.env;
 
@@ -249,7 +262,7 @@ describe('doctor checks', () => {
       expect(checks.dependencies).toBeDefined();
       expect(checks.dependencies.length).toBe(1);
       expect(checks.ai).toBeDefined();
-      expect(checks.ai.length).toBe(3);
+      expect(checks.ai.length).toBe(4);
       expect(checks.pantoum).toBeDefined();
       expect(checks.pantoum.length).toBe(1);
     });

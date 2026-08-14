@@ -42,9 +42,32 @@ export const DEFAULT_THINKING_EFFORT: ThinkingEffort = 'medium';
 
 /** Default Claude model */
 export const DEFAULT_CLAUDE_MODEL = CLAUDE_MODELS.SONNET;
-export type AgentProvider = 'claude';
+export const GITHUB_COPILOT_MODELS = {
+  GPT_5: 'gpt-5',
+  GPT_5_MINI: 'gpt-5-mini',
+  MAI_CODE_1_1_FLASH: 'mai-code-1.1-flash',
+  MAI_CODE_1_FLASH_PICKER: 'mai-code-1-flash-picker',
+} as const;
+
+export type AgentProvider = 'claude' | 'github-copilot';
 export const DEFAULT_AGENT_PROVIDER: AgentProvider = 'claude';
 export const DEFAULT_AGENT_MODEL = 'sonnet';
+
+/** Human-readable runtime names used in logs and reports */
+export const AGENT_PROVIDER_LABELS: Record<AgentProvider, string> = {
+  'claude': 'Claude Code',
+  'github-copilot': 'GitHub Copilot',
+};
+
+/** Default full model id per provider (used when no model was resolved) */
+export const DEFAULT_MODEL_BY_PROVIDER: Record<AgentProvider, string> = {
+  'claude': CLAUDE_MODELS.SONNET,
+  'github-copilot': GITHUB_COPILOT_MODELS.GPT_5,
+};
+
+export function getDefaultModelForProvider(provider: AgentProvider = DEFAULT_AGENT_PROVIDER): string {
+  return DEFAULT_MODEL_BY_PROVIDER[provider] ?? DEFAULT_MODEL_BY_PROVIDER[DEFAULT_AGENT_PROVIDER];
+}
 
 /** AI error fixing defaults */
 export const AI_DEFAULTS = {

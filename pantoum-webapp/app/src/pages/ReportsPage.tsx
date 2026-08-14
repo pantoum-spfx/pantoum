@@ -185,15 +185,15 @@ function getStageBadge(stage?: string): string {
 
 /** Aggregate Claude metrics from all patches in a report */
 function aggregateClaudeMetrics(patches: ReportPatch[]): ClaudeMetrics | null {
-  const claudePatches = patches.filter((p) => p.claudeMetrics);
-  if (claudePatches.length === 0) return null;
+  const aiPatches = patches.filter((p) => p.aiMetrics || p.claudeMetrics);
+  if (aiPatches.length === 0) return null;
 
   let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheCreation = 0;
   let totalCost = 0, totalDuration = 0, totalTurns = 0;
   const toolCounts = new Map<string, number>();
 
-  for (const p of claudePatches) {
-    const m = p.claudeMetrics!;
+  for (const p of aiPatches) {
+    const m = p.aiMetrics || p.claudeMetrics!;
     totalInput += m.tokens.input;
     totalOutput += m.tokens.output;
     totalCacheRead += m.tokens.cacheRead || 0;
@@ -430,9 +430,9 @@ export const ReportsPage: React.FC = () => {
                 <Badge appearance="outline" size="small">
                   {report.patchesApplied}/{report.totalPatches} patches
                 </Badge>
-                {report.claudeActionsCount > 0 && (
+                {(report.aiActionsCount ?? report.claudeActionsCount) > 0 && (
                   <Badge appearance="outline" color="important" icon={<BotSparkleRegular />} size="small">
-                    {report.claudeActionsCount} AI actions
+                    {report.aiActionsCount ?? report.claudeActionsCount} AI actions
                   </Badge>
                 )}
                 {report.hasMarkdown && (
@@ -483,7 +483,7 @@ const ReportDetailView: React.FC<ReportDetailViewProps> = ({
   const aiMetrics = useMemo(() => aggregateClaudeMetrics(allPatches), [allPatches]);
 
   const claudePatches = useMemo(
-    () => allPatches.filter((p) => p.type === 'claudeActions' || (p.claudeActions && p.claudeActions.length > 0)),
+    () => allPatches.filter((p) => p.type === 'claudeActions' || (p.aiActions && p.aiActions.length > 0) || (p.claudeActions && p.claudeActions.length > 0)),
     [allPatches],
   );
 
@@ -556,7 +556,7 @@ const ReportDetailView: React.FC<ReportDetailViewProps> = ({
             <Text size={300}>Applied</Text>
           </Card>
           <Card className={styles.summaryCard}>
-            <Text size={600} weight="bold">{summary.claudeActionsCount}</Text>
+            <Text size={600} weight="bold">{summary.aiActionsCount ?? summary.claudeActionsCount}</Text>
             <Text size={300}>AI Actions</Text>
           </Card>
           <Card className={styles.summaryCard}>
@@ -631,14 +631,17 @@ const ReportDetailView: React.FC<ReportDetailViewProps> = ({
               <AccordionItem key={`${patch.id}-${i}`} value={`${patch.id}-${i}`}>
                 <AccordionHeader>
                   {patch.id} — {patch.title || 'AI Fix'}
-                  {patch.claudeMetrics && ` — $${patch.claudeMetrics.cost.toFixed(3)} / ${formatDuration(patch.claudeMetrics.performance.durationMs)}`}
+                  {(patch.aiMetrics || patch.claudeMetrics) && (() => {
+                    const metrics = patch.aiMetrics || patch.claudeMetrics!;
+                    return ` — $${metrics.cost.toFixed(3)} / ${formatDuration(metrics.performance.durationMs)}`;
+                  })()}
                 </AccordionHeader>
                 <AccordionPanel>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {patch.claudeSummary && (
+                    {(patch.aiSummary || patch.claudeSummary) && (
                       <>
                         <Text size={200} weight="semibold">Summary:</Text>
-                        <div className={styles.codeBox}>{patch.claudeSummary}</div>
+                        <div className={styles.codeBox}>{patch.aiSummary || patch.claudeSummary}</div>
                       </>
                     )}
 
@@ -661,8 +664,9 @@ const ReportDetailView: React.FC<ReportDetailViewProps> = ({
                       </Text>
                     )}
 
-                    {patch.claudeActions && patch.claudeActions.length > 0 && (() => {
-                      const visibleActions = patch.claudeActions.filter(
+                    {((patch.aiActions && patch.aiActions.length > 0) || (patch.claudeActions && patch.claudeActions.length > 0)) && (() => {
+                      const actions = patch.aiActions || patch.claudeActions || [];
+                      const visibleActions = actions.filter(
                         (a: any) => a.tool && a.tool !== 'unknown' && (a.target || a.action || a.details)
                       );
                       return visibleActions.length > 0 ? (

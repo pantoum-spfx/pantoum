@@ -2,10 +2,28 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { stripAnsiCodes } from '../../utils/textUtils.js';
 import { logger } from '../../utils/logger.js';
-import { DEFAULT_CLAUDE_MODEL } from '../../defaults.js';
+import { DEFAULT_CLAUDE_MODEL, DEFAULT_AGENT_PROVIDER } from '../../defaults.js';
+import { resolveAgentProvider } from '../../adapters/runtimeAdapterFactory.js';
 import type { SolutionReport, UpgradeOptions } from '../upgradeService/index.js';
 import type { PatchRepository } from '../patchRepository.js';
 import type { PatchObject } from '../../schema/patchSchema.js';
+
+function isFileEditingBashCommand(command: string | undefined): boolean {
+  if (!command) return false;
+  return (
+    /(?:^|\s)(?:cat|tee)\b[\s\S]*?>/.test(command) ||
+    /apply_patch/.test(command) ||
+    /(?:^|\s)sed\b[\s\S]*?-i\b/.test(command) ||
+    /(?:^|\s)perl\b[\s\S]*?-pi\b/.test(command) ||
+    /(?:^|\s)node\b[\s\S]*(?:writeFileSync|appendFileSync|mkdirSync)/.test(command)
+  );
+}
+
+function isEditingAction(action: { tool?: string; target?: string }): boolean {
+  return action.tool === 'Edit' ||
+    action.tool === 'MultiEdit' ||
+    (action.tool === 'Bash' && isFileEditingBashCommand(action.target));
+}
 
 interface ReportOptions {
   reportsDir?: string;
@@ -90,10 +108,14 @@ export class ReportService {
         withBuildErrors: Object.values(solutionReports).filter(r =>
           r.buildErrors && r.buildErrors.length > 0
         ).length,
+        totalAiFixAttempts: Object.values(solutionReports).reduce((sum, r) =>
+          sum + (r.buildFixPatches?.length || 0), 0
+        ),
         totalClaudeFixAttempts: Object.values(solutionReports).reduce((sum, r) =>
           sum + (r.buildFixPatches?.length || 0), 0
         ),
-        claudeFixDetails: this.generateClaudeFixSummary(solutionReports),
+        aiFixDetails: this.generateAiFixSummary(solutionReports),
+        claudeFixDetails: this.generateAiFixSummary(solutionReports),
       },
     };
 
@@ -187,6 +209,7 @@ export class ReportService {
         totalSolutions: Object.keys(solutionReports).length,
         successful: Object.values(solutionReports).filter((r: any) => r.success).length,
         failed: Object.values(solutionReports).filter((r: any) => !r.success).length,
+        aiActionsCount: this.countAiActions(solutionReports[Object.keys(solutionReports)[0]] as any),
       },
     };
   }
@@ -194,20 +217,21 @@ export class ReportService {
   /**
    * Generate Claude fix summary
    */
-  private generateClaudeFixSummary(solutionReports: Record<string, SolutionReport>) {
-    const claudeActions: any[] = [];
+  private generateAiFixSummary(solutionReports: Record<string, SolutionReport>) {
+    const aiActions: any[] = [];
     let aggregatedMetrics: any = null;
 
     // Extract all Claude actions from patches and aggregate metrics
     Object.entries(solutionReports).forEach(([solutionPath, report]) => {
       if (report.patches) {
         report.patches.forEach((patch: any) => {
-          if (patch.type === 'claudeActions' && patch.claudeActions) {
-            claudeActions.push({
+          const patchActions = patch.aiActions || patch.claudeActions;
+          if (patch.type === 'claudeActions' && patchActions) {
+            aiActions.push({
               solution: path.basename(solutionPath),
               stage: patch.stage,
-              actionCount: patch.claudeActions.length,
-              actions: patch.claudeActions.filter((a: any) => a.tool === 'Edit' || a.tool === 'MultiEdit')
+              actionCount: patchActions.length,
+              actions: patchActions.filter((a: any) => isEditingAction(a))
                 .map((a: any) => ({
                   tool: a.tool,
                   target: path.basename(a.target || ''),
@@ -219,7 +243,8 @@ export class ReportService {
       }
 
       // Aggregate Claude metrics if available
-      if (report.claudeMetrics) {
+      const reportMetrics = (report as any).aiMetrics || report.claudeMetrics;
+      if (reportMetrics) {
         if (!aggregatedMetrics) {
           aggregatedMetrics = {
             tokens: {
@@ -237,7 +262,7 @@ export class ReportService {
           };
         }
 
-        const metrics = report.claudeMetrics;
+        const metrics = reportMetrics;
         aggregatedMetrics.tokens.input += metrics.tokens.input;
         aggregatedMetrics.tokens.output += metrics.tokens.output;
         aggregatedMetrics.tokens.total += metrics.tokens.total;
@@ -249,8 +274,8 @@ export class ReportService {
         aggregatedMetrics.sessionCount += metrics.sessions.length;
 
         // Aggregate tool usage
-        metrics.sessions.forEach(session => {
-          session.toolUsage.forEach(tool => {
+        metrics.sessions.forEach((session: { toolUsage: Array<{ name: string; count: number }> }) => {
+          session.toolUsage.forEach((tool: { name: string; count: number }) => {
             aggregatedMetrics.toolUsage.set(
               tool.name,
               (aggregatedMetrics.toolUsage.get(tool.name) || 0) + tool.count
@@ -266,16 +291,17 @@ export class ReportService {
       : [];
 
     return {
-      totalClaudeActions: claudeActions.reduce((sum, ca) => sum + ca.actionCount, 0),
-      totalEditActions: claudeActions.reduce((sum, ca) =>
+      totalAiActions: aiActions.reduce((sum, ca) => sum + ca.actionCount, 0),
+      totalClaudeActions: aiActions.reduce((sum, ca) => sum + ca.actionCount, 0),
+      totalEditActions: aiActions.reduce((sum, ca) =>
         sum + ca.actions.length, 0
       ),
-      fixedSolutions: claudeActions.map(ca => ca.solution).filter((v, i, a) => a.indexOf(v) === i),
+      fixedSolutions: aiActions.map(ca => ca.solution).filter((v, i, a) => a.indexOf(v) === i),
       actionsByStage: {
-        'build-fix': claudeActions.filter(ca => ca.stage === 'build-fix').length,
-        'post-upgrade': claudeActions.filter(ca => ca.stage === 'post-upgrade').length,
+        'build-fix': aiActions.filter(ca => ca.stage === 'build-fix').length,
+        'post-upgrade': aiActions.filter(ca => ca.stage === 'post-upgrade').length,
       },
-      details: claudeActions,
+      details: aiActions,
       // Include aggregated metrics if available
       ...(aggregatedMetrics && {
         metrics: {
@@ -317,7 +343,8 @@ export class ReportService {
         hasM365CliError: !!solutionReport.m365CliError,
         hasBuildErrors: (solutionReport.buildErrors?.length || 0) > 0,
         buildFixAttempts: solutionReport.buildFixPatches?.length || 0,
-        claudeActionsCount: this.countClaudeActions(solutionReport),
+        aiActionsCount: this.countAiActions(solutionReport),
+        claudeActionsCount: this.countAiActions(solutionReport),
         status: this.calculateSolutionStatus(solutionReport)
       }
     };
@@ -407,11 +434,11 @@ export class ReportService {
     if (report.patches && report.patches.length > 0) {
       const m365Patches = report.patches.filter((p: PatchObject) => !p.stage || p.stage === 'upgrade');
       const manualPatches = report.patches.filter((p: PatchObject) => p.stage && p.stage !== 'upgrade' && (p as any).type !== 'claudeActions');
-      const claudePatches = report.patches.filter((p: any) => p.type === 'claudeActions');
+      const aiActionPatches = report.patches.filter((p: any) => p.type === 'claudeActions');
       
       // Also check buildFixPatches for Claude actions
-      const claudeBuildFixPatches = report.buildFixPatches?.filter((p: any) => p.type === 'claudeActions') || [];
-      const allClaudePatches = [...claudePatches, ...claudeBuildFixPatches];
+      const aiBuildFixPatches = report.buildFixPatches?.filter((p: any) => p.type === 'claudeActions') || [];
+      const allAiPatches = [...aiActionPatches, ...aiBuildFixPatches];
       
       const totalPatches = report.patches.length + (report.buildFixPatches?.length || 0);
       markdown += `## Patches Applied (${totalPatches} total)\n\n`;
@@ -430,14 +457,14 @@ export class ReportService {
         });
       }
       
-      if (allClaudePatches.length > 0) {
-        markdown += `### AI Fixes Applied (${allClaudePatches.length})\n\n`;
-        allClaudePatches.forEach((patch: any, index: number) => {
+      if (allAiPatches.length > 0) {
+        markdown += `### AI Fixes Applied (${allAiPatches.length})\n\n`;
+        allAiPatches.forEach((patch: any, index: number) => {
           markdown += this.formatClaudePatchMarkdown(patch, index + 1);
         });
 
         // Add aggregated metrics summary if available
-        const metricsPatches = allClaudePatches.filter((p: any) => p.claudeMetrics);
+        const metricsPatches = allAiPatches.filter((p: any) => p.aiMetrics || p.claudeMetrics);
         if (metricsPatches.length > 0) {
           let totalTokens = { input: 0, output: 0, total: 0, cacheRead: 0 };
           let totalCost = 0;
@@ -445,7 +472,7 @@ export class ReportService {
           let totalTurns = 0;
 
           metricsPatches.forEach((patch: any) => {
-            const m = patch.claudeMetrics;
+            const m = patch.aiMetrics || patch.claudeMetrics;
             totalTokens.input += m.tokens.input;
             totalTokens.output += m.tokens.output;
             totalTokens.total += m.tokens.total;
@@ -461,10 +488,14 @@ export class ReportService {
             markdown += ` • Cache: ${totalTokens.cacheRead.toLocaleString()} read`;
           }
           markdown += `\n`;
-          markdown += `- **Total Cost**: $${totalCost.toFixed(4)}\n`;
+          markdown += `- **Total Cost / quota**: ${totalCost > 0 ? `$${totalCost.toFixed(4)}` : 'Not available for quota-based runtimes'}\n`;
           markdown += `- **Total Duration**: ${(totalDuration / 1000).toFixed(1)} seconds\n`;
           markdown += `- **Total Turns**: ${totalTurns}\n`;
-          markdown += `- **Efficiency**: ${(totalTokens.total / totalTurns).toFixed(0)} tokens/turn • $${(totalCost / metricsPatches.length).toFixed(4)}/fix\n\n`;
+          markdown += `- **Efficiency**: ${(totalTokens.total / totalTurns).toFixed(0)} tokens/turn`;
+          if (totalCost > 0) {
+            markdown += ` • $${(totalCost / metricsPatches.length).toFixed(4)}/fix`;
+          }
+          markdown += `\n\n`;
         }
       }
     }
@@ -603,20 +634,22 @@ export class ReportService {
   /**
    * Count Claude actions in report
    */
-  private countClaudeActions(report: SolutionReport): number {
+  private countAiActions(report: SolutionReport): number {
     let count = 0;
     
     // Count Claude actions in main patches array
     report.patches?.forEach((patch: any) => {
-      if (patch.type === 'claudeActions' && patch.claudeActions) {
-        count += patch.claudeActions.length;
+      const actions = (patch as any).aiActions || (patch as any).claudeActions;
+      if (patch.type === 'claudeActions' && actions) {
+        count += actions.length;
       }
     });
     
     // Count Claude actions in buildFixPatches array
     report.buildFixPatches?.forEach((patch: any) => {
-      if (patch.type === 'claudeActions' && patch.claudeActions) {
-        count += patch.claudeActions.length;
+      const actions = (patch as any).aiActions || (patch as any).claudeActions;
+      if (patch.type === 'claudeActions' && actions) {
+        count += actions.length;
       }
     });
     
@@ -690,15 +723,15 @@ export class ReportService {
     }
 
     // Add metrics if available
-    if (patch.claudeMetrics) {
-      const metrics = patch.claudeMetrics;
+    const metrics = patch.aiMetrics || patch.claudeMetrics;
+    if (metrics) {
       md += `\n**📊 AI Metrics:**\n`;
       md += `- **Tokens**: ${metrics.tokens.input.toLocaleString()} input / ${metrics.tokens.output.toLocaleString()} output (Total: ${metrics.tokens.total.toLocaleString()})`;
       if (metrics.tokens.cacheRead) {
         md += ` • Cache: ${metrics.tokens.cacheRead.toLocaleString()} read`;
       }
       md += `\n`;
-      md += `- **Cost**: $${metrics.cost.toFixed(4)}\n`;
+      md += `- **Cost / quota**: ${metrics.cost > 0 ? `$${metrics.cost.toFixed(4)}` : 'Not available for quota-based runtimes'}\n`;
       md += `- **Performance**: ${(metrics.performance.durationMs / 1000).toFixed(1)}s • ${metrics.performance.turns} turn${metrics.performance.turns !== 1 ? 's' : ''}\n`;
 
       // Show tool usage if available
@@ -752,11 +785,12 @@ export class ReportService {
       });
     }
     
-    if (patch.claudeActions && patch.claudeActions.length > 0) {
+    const actions = patch.aiActions || patch.claudeActions;
+    if (actions && actions.length > 0) {
       // Group actions by type
-      const readActions = patch.claudeActions.filter((a: any) => a.tool === 'Read');
-      const editActions = patch.claudeActions.filter((a: any) => a.tool === 'Edit' || a.tool === 'MultiEdit');
-      const bashActions = patch.claudeActions.filter((a: any) => a.tool === 'Bash');
+      const readActions = actions.filter((a: any) => a.tool === 'Read');
+      const editActions = actions.filter((a: any) => isEditingAction(a));
+      const bashActions = actions.filter((a: any) => a.tool === 'Bash');
       // Show what files were examined
       if (readActions.length > 0) {
         md += `\n- **Files Examined (${readActions.length}):**\n`;
@@ -1001,6 +1035,8 @@ export class ReportService {
       if (upgradeOptions.outputOptions?.perSolutionReports) commandParts.push('--perSolutionReports true');
       if (upgradeOptions.flags.aiFixM365Errors) commandParts.push('--aiFixM365Errors true');
       if (upgradeOptions.flags.aiFixBuildErrors) commandParts.push('--aiFixBuildErrors true');
+      const reportProvider = resolveAgentProvider(upgradeOptions.flags.claudeModel, upgradeOptions.flags.agentProvider);
+      if (reportProvider !== DEFAULT_AGENT_PROVIDER) commandParts.push(`--agentProvider ${reportProvider}`);
       if (upgradeOptions.flags.claudeModel !== DEFAULT_CLAUDE_MODEL) commandParts.push(`--agentModel ${upgradeOptions.flags.claudeModel}`);
     }
     
@@ -1076,14 +1112,14 @@ ${commandParts.join(' \\\n  ')}
       if (totalPatches > 0) {
         const m365Patches = report.patches?.filter((p: any) => p.id.startsWith('FN')).length || 0;
         const manualPatches = report.patches?.filter((p: any) => p.id.startsWith('M')).length || 0;
-        const claudePatches = report.patches?.filter((p: any) => p.type === 'claudeActions').length || 0;
+        const aiActionPatches = report.patches?.filter((p: any) => p.type === 'claudeActions').length || 0;
         
         markdown += `
 #### Patches Applied (${totalPatches} total)
 `;
         if (m365Patches > 0) markdown += `- ✅ ${m365Patches} M365 CLI patches\n`;
         if (manualPatches > 0) markdown += `- ✅ ${manualPatches} Manual patches\n`;
-        if (claudePatches > 0) markdown += `- 🤖 ${claudePatches} AI fix sessions\n`;
+        if (aiActionPatches > 0) markdown += `- 🤖 ${aiActionPatches} AI fix sessions\n`;
       }
 
       // Show Claude fixes details
@@ -1093,7 +1129,7 @@ ${commandParts.join(' \\\n  ')}
 #### AI Fixes Applied
 `;
         claudeActionPatches.forEach((patch: any, index: number) => {
-          const editActions = patch.claudeActions?.filter((a: any) => a.tool === 'Edit') || [];
+          const editActions = patch.claudeActions?.filter((a: any) => isEditingAction(a)) || [];
           markdown += `${index + 1}. **${patch.stage === 'build-fix' ? 'M365 CLI Error Fix' : 'Build Error Fix'}**\n`;
           editActions.forEach((action: any) => {
             const fileName = path.basename(action.target || 'unknown');
@@ -1117,7 +1153,7 @@ ${commandParts.join(' \\\n  ')}
         }
 
         markdown += `
-- **Cost**: $${metrics.cost.toFixed(4)} USD
+- **Cost / quota**: ${metrics.cost > 0 ? `$${metrics.cost.toFixed(4)} USD` : 'Not available for quota-based runtimes'}
 - **Performance**: ${(metrics.performance.durationMs / 1000).toFixed(1)}s total (${metrics.performance.turns} turn${metrics.performance.turns !== 1 ? 's' : ''})`;
 
         if (metrics.sessions && metrics.sessions.length > 0) {

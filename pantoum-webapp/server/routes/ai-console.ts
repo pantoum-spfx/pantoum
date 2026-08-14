@@ -3,7 +3,6 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
-import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionManager } from '../services/SessionManager.js';
 import type { AiConsoleRequest, AiConsoleSession, AiConsoleSkill } from '../../shared/types/AiConsole.js';
 import type { WSAiConsoleMessage } from '../../shared/types/WebSocketProtocol.js';
@@ -39,6 +38,7 @@ const SKILL_FILES: Record<string, string> = {
 // ============================================================================
 
 interface AiConsoleSettings {
+  agentProvider: 'claude' | 'github-copilot';
   claudeModel: string;
   thinkingEffort: string;
 }
@@ -48,12 +48,13 @@ async function loadAiConsoleSettings(): Promise<AiConsoleSettings> {
     const mod = await import(/* @vite-ignore */ path.join(PANTOUM_ROOT, 'src/settingsLoader.js'));
     const fileSettings = mod.loadSettingsFile(PANTOUM_ROOT);
     const resolved = mod.resolveSettings(fileSettings);
-    const claudeModel: string = resolved.agent_model || 'sonnet';
+    const agentProvider = (resolved.agent_provider as 'claude' | 'github-copilot' | undefined) || 'claude';
+    const claudeModel: string = mod.resolveModelId(resolved.agent_model || 'sonnet', agentProvider);
     const thinkingEffort: string = resolved.thinking_effort || 'high';
-    return { claudeModel, thinkingEffort };
+    return { agentProvider, claudeModel, thinkingEffort };
   } catch {
     // Fallback if settings can't be loaded
-    return { claudeModel: 'sonnet', thinkingEffort: 'high' };
+    return { agentProvider: 'claude', claudeModel: 'sonnet', thinkingEffort: 'high' };
   }
 }
 
@@ -69,8 +70,9 @@ async function buildAgentOptions(
   settings: AiConsoleSettings,
   abortController: AbortController,
 ): Promise<{ options: any; modelName: string }> {
-  const { claude } = await import(/* @vite-ignore */ path.join(PANTOUM_ROOT, 'src/adapters/claudeAgentSdkAdapter.js'));
-  const builder = claude()
+  const { createRuntimeAdapter } = await import(/* @vite-ignore */ path.join(PANTOUM_ROOT, 'src/adapters/runtimeAdapterFactory.js'));
+  const builder = await createRuntimeAdapter(settings.agentProvider);
+  builder
     .withModel(settings.claudeModel)
     .allowTools('Bash', 'Read', 'Grep', 'Glob')
     .skipPermissions()
@@ -156,8 +158,7 @@ export function replaySessionBuffer(ws: import('ws').WebSocket, sessionId: strin
 // ============================================================================
 
 /**
- * Run an Agent SDK query in the background and stream events via WebSocket.
- * Options are built by the adapter via buildAgentOptions() — no manual assembly here.
+ * Run an AI runtime query in the background and stream events via WebSocket.
  */
 function runAgentSession(
   sessionManager: SessionManager,
@@ -165,94 +166,64 @@ function runAgentSession(
   session: AiConsoleSession,
   prompt: string,
   cwd: string,
-  options: any,
+  _options: any,
   modelName: string,
+  agentProvider: 'claude' | 'github-copilot',
 ): void {
   broadcastEvent(sessionManager, sessionId, 'init', `Running /pantoum-${session.skill} (model: ${modelName})...`);
 
-  // Match the working adapter pattern: chdir before query, restore in finally
-  const originalCwd = process.cwd();
-  if (cwd !== originalCwd && fs.existsSync(cwd)) {
-    process.chdir(cwd);
-  }
-
-  const queryResult = agentQuery({ prompt, options });
-
-  // Iterate the async generator in the background
   (async () => {
-    try {
-      for await (const message of queryResult) {
-        // Stop iterating if the session was aborted
-        if (session.status === 'stopped') break;
+   try {
+     const { createRuntimeAdapter } = await import(/* @vite-ignore */ path.join(PANTOUM_ROOT, 'src/adapters/runtimeAdapterFactory.js'));
+     const runtime = await createRuntimeAdapter(agentProvider);
+     runtime
+       .withModel(modelName)
+       .inDirectory(cwd)
+       .allowTools('Bash', 'Read', 'Grep', 'Glob')
+       .skipPermissions()
+       .withAbortController(activeSessions.get(sessionId)?.abortController ?? new AbortController())
+       .withPersistSession(false)
+       .onAssistant((content) => {
+         if (content) {
+           broadcastEvent(sessionManager, sessionId, 'text', content);
+         }
+       })
+       .onToolUse((tool) => {
+         broadcastEvent(
+           sessionManager,
+           sessionId,
+           'tool_use',
+           tool.input ? JSON.stringify(tool.input).slice(0, 500) : '',
+           { toolName: tool.name },
+         );
+       });
 
-        // System init message
-        if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
-          broadcastEvent(sessionManager, sessionId, 'init',
-            `Session started (ID: ${(message as any).session_id || 'n/a'})`);
-          continue;
-        }
+     const result = await runtime.query(prompt).asText(true);
+     broadcastEvent(sessionManager, sessionId, 'metrics',
+       `Completed in ${(result.metrics.durationMs / 1000).toFixed(1)}s (model: ${modelName})`,
+       {
+         metrics: {
+           durationMs: result.metrics.durationMs,
+           totalTokens: result.metrics.totalTokens,
+           costUSD: result.metrics.costUSD,
+         },
+       });
 
-        // Assistant messages — extract text and tool_use blocks
-        if (message.type === 'assistant' && 'message' in message) {
-          const apiMessage = (message as any).message;
-          if (apiMessage?.content) {
-            for (const block of apiMessage.content) {
-              if (block.type === 'text' && block.text) {
-                broadcastEvent(sessionManager, sessionId, 'text', block.text);
-              } else if (block.type === 'tool_use') {
-                broadcastEvent(sessionManager, sessionId, 'tool_use',
-                  block.input ? JSON.stringify(block.input).slice(0, 500) : '',
-                  { toolName: block.name });
-              }
-            }
-          }
-          continue;
-        }
-
-        // Result message — metrics + completion
-        if (message.type === 'result') {
-          const result = message as any;
-          const metrics = {
-            durationMs: result.duration_ms || 0,
-            totalTokens: ((result.usage?.input_tokens || 0) + (result.usage?.output_tokens || 0)),
-            costUSD: result.total_cost_usd || result.cost_usd || 0,
-          };
-          broadcastEvent(sessionManager, sessionId, 'metrics',
-            `Completed in ${(metrics.durationMs / 1000).toFixed(1)}s (model: ${modelName})`,
-            { metrics });
-
-          // Note: result.result duplicates content already streamed via assistant messages — skip it
-
-          session.status = 'completed';
-          session.completedAt = new Date().toISOString();
-          broadcastEvent(sessionManager, sessionId, 'done', 'Session finished');
-          continue;
-        }
-      }
-
-      // Generator ended without a result message (edge case)
-      if (session.status === 'running') {
-        session.status = 'completed';
-        session.completedAt = new Date().toISOString();
-        broadcastEvent(sessionManager, sessionId, 'done', 'Session finished');
-      }
-    } catch (error: any) {
-      // Don't broadcast error for intentional aborts
-      if (session.status !== 'stopped') {
-        const msg = error instanceof Error ? error.message : String(error);
-        broadcastEvent(sessionManager, sessionId, 'error', `Agent SDK error: ${msg}`);
-        session.status = 'failed';
-        session.completedAt = new Date().toISOString();
-        broadcastEvent(sessionManager, sessionId, 'done', 'Session failed');
-      }
-    } finally {
-      // Restore original working directory
-      try { process.chdir(originalCwd); } catch { /* ignore */ }
-
-      // Clean up after a delay (keep session info for status queries)
-      setTimeout(() => {
-        activeSessions.delete(sessionId);
-        sessionBuffers.delete(sessionId);
+     session.status = 'completed';
+     session.completedAt = new Date().toISOString();
+     broadcastEvent(sessionManager, sessionId, 'done', 'Session finished');
+   } catch (error: any) {
+     if (session.status !== 'stopped') {
+       const msg = error instanceof Error ? error.message : String(error);
+       broadcastEvent(sessionManager, sessionId, 'error', `AI runtime error: ${msg}`);
+       session.status = 'failed';
+       session.completedAt = new Date().toISOString();
+       broadcastEvent(sessionManager, sessionId, 'done', 'Session failed');
+     }
+   } finally {
+     setTimeout(() => {
+       activeSessions.delete(sessionId);
+       sessionBuffers.delete(sessionId);
         doneSessions.delete(sessionId);
       }, 60_000);
     }
@@ -285,7 +256,7 @@ export function aiConsoleRouter(sessionManager: SessionManager): Router {
   });
 
   /**
-   * POST /api/ai-console/run — Start a Claude Code skill invocation via Agent SDK
+   * POST /api/ai-console/run — Start a Pantoum AI runtime skill invocation
    */
   router.post('/run', async (req, res) => {
     try {
@@ -385,7 +356,7 @@ export function aiConsoleRouter(sessionManager: SessionManager): Router {
       activeSessions.set(sessionId, { session, abortController });
 
       // Start the Agent SDK streaming loop in the background
-      runAgentSession(sessionManager, sessionId, session, prompt, cwd, options, modelName);
+      runAgentSession(sessionManager, sessionId, session, prompt, cwd, options, modelName, settings.agentProvider);
 
       res.json({ sessionId, status: 'running' });
     } catch (error) {

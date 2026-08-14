@@ -19,8 +19,18 @@
  *   --batch-size N        Process only N solutions, then stop
  *   --include-processed   Also process already upgraded solutions
  *   --target-version      Target SPFx version (default: from defaults.ts)
- *   --claude-model        Claude model: sonnet, opus, haiku (default: from settings file or defaults.ts)
+ *   --agent-provider      AI runtime provider: claude, github-copilot
+ *   --agent-model         AI model override (e.g. sonnet, opus, gpt-5, gpt-5-mini, mai-code-1.1-flash)
+ *   --claude-model        Legacy alias for --agent-model
  *   --thinking-effort     Thinking effort: high, medium, low, off (default: from settings file)
+ *   --ai-fix-m365-errors true|false  Enable AI cleanup for M365 upgrade-report errors
+ *   --ai-fix-build-errors true|false Enable AI cleanup for build errors
+ *   --ai-fix-third-party-errors true|false Enable AI cleanup for third-party regressions
+ *   --ai-fix-eslint-warnings true|false  Force AI cleanup for residual ESLint warnings
+ *   --ai-fix-eslint-properly true|false  Fix code vs disable comments during ESLint cleanup
+ *   --ai-fix-typescript-warnings true|false  Force AI cleanup for TS warnings
+ *   --exclude-patches IDS   Comma-separated patch IDs to exclude
+ *   --continue-on-solution-fail true|false  Keep going after a failed solution
  *   --dry-run             Show what would be executed
  *   --help                Show help
  */
@@ -48,9 +58,18 @@ interface Config {
   limit: number;
   includeProcessed: boolean;
   targetVersion: string;
+  agentProvider: string;
+  agentModel: string;
   claudeModel: string;
   thinkingEffort: string;
   excludedPatches: string;
+  aiFixM365Errors?: boolean;
+  aiFixBuildErrors?: boolean;
+  aiFixThirdPartyErrors?: boolean;
+  aiFixEslintWarnings?: boolean;
+  aiFixEslintProperly?: boolean;
+  aiFixTypeScriptWarnings?: boolean;
+  continueOnSolutionFail?: boolean;
   dryRun: boolean;
 }
 
@@ -120,8 +139,18 @@ ${colorize('cyan', 'Options:')}
   --limit N             Select first N solutions (alphabetically sorted, deterministic across runs)
   --include-processed   Also process solutions that already have pantoum-upgrade.log
   --target-version VER  Target SPFx version (default: ${DEFAULT_TARGET_VERSION})
-  --claude-model MODEL  Claude model: sonnet, opus, haiku (default: from settings/defaults)
+  --agent-provider ID   AI runtime provider: claude, github-copilot
+  --agent-model MODEL   AI model override: sonnet, opus, gpt-5, gpt-5-mini, mai-code-1.1-flash, mai-code-1-flash-picker
+  --claude-model MODEL  Legacy alias for --agent-model
   --thinking-effort LVL Thinking effort: high, medium, low, off (default: from settings)
+  --ai-fix-m365-errors true|false   Clean up M365 CLI upgrade-report errors
+  --ai-fix-build-errors true|false  Clean up build errors
+  --ai-fix-third-party-errors true|false  Clean up third-party migration errors
+  --ai-fix-eslint-warnings true|false   Clean up residual ESLint warnings
+  --ai-fix-eslint-properly true|false   Fix ESLint warnings in code vs suppress
+  --ai-fix-typescript-warnings true|false  Clean up TypeScript warnings
+  --exclude-patches IDS    Comma-separated patch IDs to exclude
+  --continue-on-solution-fail true|false  Continue after a solution fails
   --dry-run             Show what would be executed without running
   --help                Show this help message
 
@@ -287,18 +316,51 @@ class ParallelUpgradeEngine {
       '--toVersion', this.config.targetVersion,
       '--excludePatchIds', this.config.excludedPatches,
       '--perSolutionReports', 'true',
-      '--onSingleSolutionFail', 'halt',
+      '--onSingleSolutionFail', this.config.continueOnSolutionFail ? 'continue' : 'halt',
       '--analyzeComplexity', 'false',
     ];
 
-    // Only forward --claudeModel if the user explicitly passed it to the script
-    if (this.config.claudeModel) {
-      args.push('--claudeModel', this.config.claudeModel);
+    if (this.config.agentProvider) {
+      args.push('--agentProvider', this.config.agentProvider);
+    }
+
+    if (this.config.agentModel) {
+      args.push('--agentModel', this.config.agentModel);
+    } else if (this.config.claudeModel) {
+      args.push('--agentModel', this.config.claudeModel);
     }
 
     // Only forward --thinkingEffort if the user explicitly passed it to the script
     if (this.config.thinkingEffort) {
       args.push('--thinkingEffort', this.config.thinkingEffort);
+    }
+
+    if (this.config.aiFixM365Errors !== undefined) {
+      args.push('--aiFixM365Errors', String(this.config.aiFixM365Errors));
+    }
+
+    if (this.config.aiFixBuildErrors !== undefined) {
+      args.push('--aiFixBuildErrors', String(this.config.aiFixBuildErrors));
+    }
+
+    if (this.config.aiFixThirdPartyErrors !== undefined) {
+      args.push('--aiFixThirdPartyErrors', String(this.config.aiFixThirdPartyErrors));
+    }
+
+    if (this.config.aiFixEslintWarnings !== undefined) {
+      args.push('--aiFixEslintWarnings', String(this.config.aiFixEslintWarnings));
+    }
+
+    if (this.config.aiFixEslintProperly !== undefined) {
+      args.push('--aiFixEslintProperly', String(this.config.aiFixEslintProperly));
+    }
+
+    if (this.config.aiFixTypeScriptWarnings !== undefined) {
+      args.push('--aiFixTypeScriptWarnings', String(this.config.aiFixTypeScriptWarnings));
+    }
+
+    if (this.config.continueOnSolutionFail !== undefined) {
+      args.push('--onSingleSolutionFail', this.config.continueOnSolutionFail ? 'continue' : 'halt');
     }
 
     return new Promise<void>((resolve) => {
@@ -444,9 +506,18 @@ function parseArgs(): Config {
     limit: 0,
     includeProcessed: false,
     targetVersion: DEFAULT_TARGET_VERSION,
+    agentProvider: '',
+    agentModel: '',
     claudeModel: '',
     thinkingEffort: '',
     excludedPatches: 'FN019002,FN012019,FN017001',
+    aiFixM365Errors: undefined,
+    aiFixBuildErrors: undefined,
+    aiFixThirdPartyErrors: undefined,
+    aiFixEslintWarnings: undefined,
+    aiFixEslintProperly: undefined,
+    aiFixTypeScriptWarnings: undefined,
+    continueOnSolutionFail: undefined,
     dryRun: false,
   };
 
@@ -473,11 +544,52 @@ function parseArgs(): Config {
       case '--target-version':
         config.targetVersion = args[++i];
         break;
+      case '--agent-provider':
+      case '--agentProvider':
+        config.agentProvider = args[++i];
+        break;
+      case '--agent-model':
+      case '--agentModel':
+        config.agentModel = args[++i];
+        break;
       case '--claude-model':
         config.claudeModel = args[++i];
         break;
       case '--thinking-effort':
+      case '--thinkingEffort':
         config.thinkingEffort = args[++i];
+        break;
+      case '--ai-fix-m365-errors':
+      case '--aiFixM365Errors':
+        config.aiFixM365Errors = args[++i] === 'true';
+        break;
+      case '--ai-fix-build-errors':
+      case '--aiFixBuildErrors':
+        config.aiFixBuildErrors = args[++i] === 'true';
+        break;
+      case '--ai-fix-third-party-errors':
+      case '--aiFixThirdPartyErrors':
+        config.aiFixThirdPartyErrors = args[++i] === 'true';
+        break;
+      case '--ai-fix-eslint-warnings':
+      case '--aiFixEslintWarnings':
+        config.aiFixEslintWarnings = args[++i] === 'true';
+        break;
+      case '--ai-fix-eslint-properly':
+      case '--aiFixEslintProperly':
+        config.aiFixEslintProperly = args[++i] === 'true';
+        break;
+      case '--ai-fix-typescript-warnings':
+      case '--aiFixTypeScriptWarnings':
+        config.aiFixTypeScriptWarnings = args[++i] === 'true';
+        break;
+      case '--exclude-patches':
+      case '--excludePatches':
+        config.excludedPatches = args[++i];
+        break;
+      case '--continue-on-solution-fail':
+      case '--continueOnSolutionFail':
+        config.continueOnSolutionFail = args[++i] === 'true';
         break;
       case '--dry-run':
         config.dryRun = true;
@@ -583,7 +695,11 @@ async function main(): Promise<void> {
     console.log('Configuration:');
     console.log(`  Solutions dir:    ${config.solutionsDir}`);
     console.log(`  Target version:   ${config.targetVersion}`);
-    console.log(`  Claude model:     ${config.claudeModel}`);
+    console.log(`  Agent provider:   ${config.agentProvider || '(settings/default)'}`);
+    console.log(`  Agent model:      ${config.agentModel || config.claudeModel || '(settings/default)'}`);
+    console.log(`  Thinking effort:  ${config.thinkingEffort || '(settings/default)'}`);
+    console.log(`  ESLint cleanup:   ${config.aiFixEslintWarnings === undefined ? '(settings/default)' : config.aiFixEslintWarnings}`);
+    console.log(`  Excluded patches: ${config.excludedPatches}`);
     console.log(`  Parallel slots:   ${config.parallelCount}`);
     console.log(`  Limit:            ${config.limit > 0 ? config.limit : 'all'}`);
     console.log(`  Batch size:       ${config.batchSize > 0 ? config.batchSize : 'unlimited'}`);

@@ -115,7 +115,7 @@ export const SolutionStatsRibbon: React.FC<SolutionStatsRibbonProps> = ({
           <Text className={styles.separator}>|</Text>
           <div className={styles.stat}>
             <Text size={200} style={{ color: tokens.colorPalettePurpleForeground2 }}>
-              ${aiTotals.costUSD.toFixed(2)}
+              {aiTotals.costUSD > 0 ? `$${aiTotals.costUSD.toFixed(2)}` : 'Quota-based'}
             </Text>
           </div>
         </>

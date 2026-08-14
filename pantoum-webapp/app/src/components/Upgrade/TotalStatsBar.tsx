@@ -112,9 +112,9 @@ export const TotalStatsBar: React.FC<TotalStatsBarProps> = ({
             <Text className={styles.separator}>|</Text>
             <div className={styles.stat}>
               <Text size={300} weight="semibold" style={{ color: tokens.colorPalettePurpleForeground2 }}>
-                ${metrics.totalCostUSD.toFixed(2)}
+                {metrics.totalCostUSD > 0 ? `$${metrics.totalCostUSD.toFixed(2)}` : 'Quota-based'}
               </Text>
-              <Text size={200}>Cost</Text>
+              <Text size={200}>Cost / quota</Text>
             </div>
           </>
         )}
