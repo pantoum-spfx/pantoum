@@ -252,9 +252,42 @@ export class ClaudeMigrationExecutor {
         })
         .skipPermissions();
 
-      // Execute query with metrics
-      const queryBuilder = claudeInstance.query(prompt);
-      const result = await (queryBuilder as any).asText(true); // Request metrics
+      // Execute query with metrics — one bounded retry on transient runtime
+      // failures. MAI sessions have been observed to go silent mid-run (600s
+      // idle timeout, 2026-08-13 and 2026-08-15) or reject a single request
+      // with an intermittent content-policy 400; a stall should cost one
+      // attempt, not the whole solution. Edits from a failed attempt persist
+      // on disk, matching the build-fix retry semantics.
+      const MIGRATION_ATTEMPTS = 2;
+      let result: any;
+      for (let attempt = 1; attempt <= MIGRATION_ATTEMPTS; attempt++) {
+        if (attempt > 1) {
+          // Fresh session id and a separate trace file, so the retry cannot
+          // resume the stalled session or overwrite its debug evidence.
+          claudeInstance = claudeInstance.withSessionId(`pantoum_${sessionLabel}_retry${attempt}`);
+          if (debugReports && runDirectory) {
+            claudeInstance = claudeInstance.withDebugFile(
+              path.join(runDirectory, `ai_debug_${sessionLabel}_retry${attempt}.jsonl`)
+            );
+          }
+        }
+
+        try {
+          result = await (claudeInstance.query(prompt) as any).asText(true); // Request metrics
+          break;
+        } catch (queryError) {
+          const message = queryError instanceof Error ? queryError.message : String(queryError);
+          const isAborted = message.includes('aborted');
+          if (attempt === MIGRATION_ATTEMPTS || isAborted) {
+            throw queryError;
+          }
+          logger.warn(
+            '   ⚠️ Migration attempt %d failed (%s) — retrying with a fresh session...',
+            attempt,
+            message.substring(0, 120)
+          );
+        }
+      }
 
       let response: string;
       let metrics: any = undefined;
@@ -1357,7 +1390,22 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
         }
       });
 
-      await runtimeInstance.query(prompt).asText();
+      // Same bounded-retry semantics as executeMigration: one fresh-session
+      // retry on a transient runtime failure (stall timeout, intermittent 400).
+      try {
+        await runtimeInstance.query(prompt).asText();
+      } catch (queryError) {
+        const message = queryError instanceof Error ? queryError.message : String(queryError);
+        if (message.includes('aborted')) {
+          throw queryError;
+        }
+        logger.warn(
+          '   ⚠️ Third-party migration attempt failed (%s) — retrying with a fresh session...',
+          message.substring(0, 120)
+        );
+        runtimeInstance = runtimeInstance.withSessionId(`pantoum_${sessionLabel}_retry2`);
+        await runtimeInstance.query(prompt).asText();
+      }
 
       logger.info('   → %s third-party migration completed', runtimeLabel);
 
