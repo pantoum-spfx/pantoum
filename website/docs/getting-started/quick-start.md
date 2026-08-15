@@ -47,7 +47,7 @@ update_production_deps: "none"
 per_solution_reports: false
 ```
 
-`agent_provider` is fixed to `claude` in this public release.
+`agent_provider` selects the AI runtime: `claude` (default) or `github-copilot`. See [Authentication](./authentication.md) for the Copilot setup.
 
 ## Run The Upgrade
 

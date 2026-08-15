@@ -56,7 +56,19 @@ Set it via CLI flag or Advanced settings in Studio:
 pantoum --localPath ./project --toVersion 1.23.0 --agentModel opus
 ```
 
-`agent_provider` is fixed to `claude` in this public release.
+## GitHub Copilot
+
+Pantoum can also run its AI stages on GitHub Copilot. Set `agent_provider: "github-copilot"` (or pass `--agentProvider github-copilot`) and pick a model with `agent_model`:
+
+| Model | Flag Value |
+|-------|-----------|
+| GPT-5 (default) | `gpt-5` |
+| GPT-5 mini | `gpt-5-mini` |
+| MAI Code 1.1 Flash | `mai-code-1.1-flash` |
+
+Authentication comes from the Copilot CLI's own login — install the [GitHub Copilot CLI](https://github.com/github/copilot-cli) and sign in once with `copilot`, then Pantoum uses that session. Model availability depends on your Copilot plan; if a model is rejected at session start, pick another from the table.
+
+The prompts are the same for both runtimes. Only the execution backend changes.
 
 ## Usage Visibility
 
