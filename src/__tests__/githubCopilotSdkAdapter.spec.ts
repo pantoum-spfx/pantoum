@@ -92,7 +92,7 @@ describe('scoped permission handler', () => {
       invocation
     );
 
-    expect(result).toMatchObject({ kind: 'denied-interactively-by-user' });
+    expect(result).toMatchObject({ kind: 'reject' });
     expect(denied).toEqual(['/Users/someone/real-repo/src/file.ts']);
   });
 
@@ -102,7 +102,7 @@ describe('scoped permission handler', () => {
       { kind: 'write', fileName: '../../other-solution/file.ts' } as never,
       invocation
     );
-    expect(result).toMatchObject({ kind: 'denied-interactively-by-user' });
+    expect(result).toMatchObject({ kind: 'reject' });
   });
 
   it('approves writes inside the working directory', () => {

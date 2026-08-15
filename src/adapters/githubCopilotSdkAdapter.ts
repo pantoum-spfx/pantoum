@@ -34,8 +34,13 @@ export function createScopedPermissionHandler(
         const inside = resolved === root || resolved.startsWith(root + path.sep);
         if (!inside) {
           onDeny?.(fileName);
+          // 'reject' is the variant the Copilot runtime's RPC accepts
+          // (approve-once | approve-for-session | reject | user-not-available).
+          // The typing also permits richer denial kinds, but the runtime maps
+          // those to "malformed payload" tool failures — the denial then works
+          // only by accident and the model never sees the feedback.
           return {
-            kind: 'denied-interactively-by-user',
+            kind: 'reject',
             feedback: `Write outside the working directory is not permitted: ${fileName}. Use paths inside ${root}.`,
           };
         }
