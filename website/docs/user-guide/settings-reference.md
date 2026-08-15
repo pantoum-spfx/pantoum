@@ -66,6 +66,7 @@ Older `claude_model` values are still read and normalized to `agent_model` for b
 | `analyze_complexity` | `false` | Studio keeps this off by default |
 | `include_dev_deps_complexity` | `false` | Complexity analysis detail |
 | `ai_fix_third_party_errors` | `true` | Claude follow-up for dependency breakage |
+| `ai_fix_eslint_warnings` | `false` | Also clean up remaining ESLint warnings after the build is green, aiming for a warning-free result. Off by default; warnings are reported but left in place |
 | `ai_fix_eslint_properly` | `true` | Prefer real code fixes over disable comments |
 | `ai_fix_typescript_warnings` | `true` | Fix TypeScript warnings after the upgrade |
 
@@ -100,6 +101,7 @@ Older `claude_model` values are still read and normalized to `agent_model` for b
 | `agent_model` | `--agentModel` |
 | `ai_fix_m365_errors` | `--aiFixM365Errors` |
 | `ai_fix_build_errors` | `--aiFixBuildErrors` |
+| `ai_fix_eslint_warnings` | `--aiFixEslintWarnings` |
 | `ai_max_retries` | `--aiMaxRetries` |
 | `update_production_deps` | `--updateThirdPartyDeps` |
 | `per_solution_reports` | `--perSolutionReports` |
