@@ -511,10 +511,10 @@ manualSteps:
         });
       }
 
-      module.exports = {
-        plugins: [
-          new webpack.DefinePlugin(envVars)
-        ]
+      module.exports = function (config) {
+        config.plugins = config.plugins || [];
+        config.plugins.push(new webpack.DefinePlugin(envVars));
+        return config;
       };
 
   # Env injection: delete obsolete process-env.js

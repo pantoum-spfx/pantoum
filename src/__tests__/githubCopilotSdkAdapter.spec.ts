@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createScopedPermissionHandler,
   mapToolsForCopilotSdk,
   normalizeCopilotToolInput,
   normalizeCopilotToolName,
@@ -73,5 +74,51 @@ describe('GitHub Copilot SDK adapter mappings', () => {
       file_path: '/a/b.ts',
       old_string: 'x',
     });
+  });
+});
+
+describe('scoped permission handler', () => {
+  // A live run (2026-08-15) edited files in an unrelated repository via absolute
+  // paths — workingDirectory is a default for the SDK's file tools, not a boundary.
+  const workdir = '/tmp/pantoum-sandbox/solution';
+  const invocation = { sessionId: 's1' };
+
+  it('denies a write outside the working directory and reports it', () => {
+    const denied: string[] = [];
+    const handler = createScopedPermissionHandler(workdir, (f) => denied.push(f));
+
+    const result = handler(
+      { kind: 'write', fileName: '/Users/someone/real-repo/src/file.ts' } as never,
+      invocation
+    );
+
+    expect(result).toMatchObject({ kind: 'denied-interactively-by-user' });
+    expect(denied).toEqual(['/Users/someone/real-repo/src/file.ts']);
+  });
+
+  it('denies path-traversal writes that resolve outside the working directory', () => {
+    const handler = createScopedPermissionHandler(workdir);
+    const result = handler(
+      { kind: 'write', fileName: '../../other-solution/file.ts' } as never,
+      invocation
+    );
+    expect(result).toMatchObject({ kind: 'denied-interactively-by-user' });
+  });
+
+  it('approves writes inside the working directory', () => {
+    const handler = createScopedPermissionHandler(workdir);
+    const relative = handler({ kind: 'write', fileName: 'src/inside.ts' } as never, invocation);
+    const absolute = handler(
+      { kind: 'write', fileName: `${workdir}/src/inside.ts` } as never,
+      invocation
+    );
+    expect(relative).toMatchObject({ kind: 'approve-once' });
+    expect(absolute).toMatchObject({ kind: 'approve-once' });
+  });
+
+  it('approves non-write kinds unchanged', () => {
+    const handler = createScopedPermissionHandler(workdir);
+    const read = handler({ kind: 'read', path: '/anywhere/else.ts' } as never, invocation);
+    expect(read).toMatchObject({ kind: 'approve-once' });
   });
 });

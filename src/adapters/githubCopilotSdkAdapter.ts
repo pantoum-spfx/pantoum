@@ -12,8 +12,45 @@ function normalizeReasoningEffort(effort?: string): 'low' | 'medium' | 'high' | 
   return undefined;
 }
 
-function createPermissionHandler(skipPermissions: boolean): PermissionHandler | undefined {
-  return skipPermissions ? approveAll : undefined;
+/**
+ * Auto-approve like `approveAll`, but refuse file writes outside the working
+ * directory. The SDK's built-in edit/create tools accept absolute paths and
+ * `workingDirectory` is only a default, not a boundary — in a live run
+ * (2026-08-15) the model edited files in an unrelated repository via absolute
+ * paths. Reads and shell stay approved for parity with the Claude path's
+ * bypassPermissions behaviour; writes are where the damage is.
+ */
+export function createScopedPermissionHandler(
+  workingDirectory: string,
+  onDeny?: (fileName: string) => void
+): PermissionHandler {
+  const root = path.resolve(workingDirectory);
+
+  return (request, invocation) => {
+    if (request.kind === 'write') {
+      const fileName = (request as { fileName?: string }).fileName;
+      if (typeof fileName === 'string') {
+        const resolved = path.resolve(root, fileName);
+        const inside = resolved === root || resolved.startsWith(root + path.sep);
+        if (!inside) {
+          onDeny?.(fileName);
+          return {
+            kind: 'denied-interactively-by-user',
+            feedback: `Write outside the working directory is not permitted: ${fileName}. Use paths inside ${root}.`,
+          };
+        }
+      }
+    }
+    return approveAll(request, invocation);
+  };
+}
+
+function createPermissionHandler(
+  skipPermissions: boolean,
+  workingDirectory: string,
+  onDeny?: (fileName: string) => void
+): PermissionHandler | undefined {
+  return skipPermissions ? createScopedPermissionHandler(workingDirectory, onDeny) : undefined;
 }
 
 function buildBilling(totalNanoAiu: number | undefined): RuntimeBilling | undefined {
@@ -217,7 +254,7 @@ class GitHubCopilotSdkAdapter implements RuntimeAdapter {
         reasoningEffort: normalizeReasoningEffort(this.config.thinkingEffort),
         workingDirectory: this.config.directory,
         availableTools,
-        onPermissionRequest: createPermissionHandler(this.config.skipPermissions),
+        onPermissionRequest: createPermissionHandler(this.config.skipPermissions, this.config.directory),
       },
     };
   }
@@ -283,7 +320,7 @@ class CopilotQueryBuilder {
         reasoningEffort: normalizeReasoningEffort(this.config.thinkingEffort),
         workingDirectory: this.config.directory,
         availableTools,
-        onPermissionRequest: createPermissionHandler(this.config.skipPermissions),
+        onPermissionRequest: createPermissionHandler(this.config.skipPermissions, this.config.directory),
         enableSessionStore: false,
         skipCustomInstructions: false,
       });
