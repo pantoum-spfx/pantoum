@@ -296,6 +296,36 @@ describe('settingsLoader', () => {
     });
   });
 
+  describe('verification runtime settings', () => {
+    it('should leave verification fields absent by default (inherit the agent runtime)', () => {
+      const settings = resolveSettings({});
+      expect(settings.verification_provider).toBeUndefined();
+      expect(settings.verification_model).toBeUndefined();
+    });
+
+    it('should infer the verification provider from a verification model', () => {
+      const settings = resolveSettings({}, { verification_model: 'sonnet' } as any);
+      expect(settings.verification_provider).toBe('claude');
+      expect(settings.verification_model).toBe('sonnet');
+    });
+
+    it('should normalize verification provider aliases without touching an unset model', () => {
+      const settings = resolveSettings({ verification_provider: 'github' } as any);
+      expect(settings.verification_provider).toBe('github-copilot');
+      expect(settings.verification_model).toBeUndefined();
+    });
+
+    it('should keep a cross-provider verification pair intact on a Copilot run', () => {
+      const settings = resolveSettings(
+        { agent_provider: 'github-copilot', agent_model: 'mai-code-1.1-flash' } as any,
+        { verification_provider: 'claude', verification_model: 'sonnet' } as any,
+      );
+      expect(settings.agent_provider).toBe('github-copilot');
+      expect(settings.verification_provider).toBe('claude');
+      expect(settings.verification_model).toBe('sonnet');
+    });
+  });
+
   describe('settingsToCamelCase', () => {
     it('should convert settings to camelCase CLI args', () => {
       const settings = buildDefaultSettings();
@@ -305,6 +335,20 @@ describe('settingsLoader', () => {
       expect(cliArgs.agentProvider).toBe(settings.agent_provider);
       expect(cliArgs.agentModel).toBe(settings.agent_model);
       expect(cliArgs.aiFixM365Errors).toBe(settings.ai_fix_m365_errors);
+    });
+
+    it('should expose verification settings to the CLI layer', () => {
+      expect(CLI_FIELD_MAP.verification_provider).toBe('verificationProvider');
+      expect(CLI_FIELD_MAP.verification_model).toBe('verificationModel');
+
+      const settings = {
+        ...buildDefaultSettings(),
+        verification_provider: 'claude' as const,
+        verification_model: 'sonnet',
+      };
+      const cliArgs = settingsToCamelCase(settings);
+      expect(cliArgs.verificationProvider).toBe('claude');
+      expect(cliArgs.verificationModel).toBe('sonnet');
     });
 
     it('should convert continue_on_solution_fail boolean to halt/continue', () => {

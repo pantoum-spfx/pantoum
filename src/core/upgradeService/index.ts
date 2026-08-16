@@ -60,6 +60,8 @@ export interface UpgradeOptions {
     aiFixBuildErrors: boolean;
     agentProvider?: AgentProvider;
     claudeModel: string;
+    verificationProvider?: AgentProvider;
+    verificationModel?: string;
     updateThirdPartyDeps?: 'none' | 'patch' | 'minor' | 'major';
     updateThirdPartyDevDeps?: 'none' | 'patch';
     cleanInstallAfterDepUpdate?: boolean;
@@ -622,6 +624,8 @@ export class UpgradeService {
       versionUpdateOptions: versionUpdateOptions,
       claudeModel: flags.claudeModel,
       agentProvider: flags.agentProvider,
+      verificationProvider: flags.verificationProvider,
+      verificationModel: flags.verificationModel,
       envInjectionStrategy: flags.envInjectionStrategy,
       debugReports,
       aiMaxRetries: flags.aiMaxRetries,

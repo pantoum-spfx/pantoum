@@ -42,6 +42,8 @@ Pantoum already uses provider-neutral names in the public settings contract:
 |---------|---------|-------|
 | `agent_provider` | `claude` | AI runtime: `claude` or `github-copilot` |
 | `agent_model` | `sonnet` | Claude: `sonnet`, `opus` — Copilot: `gpt-5`, `gpt-5-mini`, `mai-code-1.1-flash` |
+| `verification_provider` | inherits `agent_provider` | AI runtime for migration verification. Setting it to a different runtime than the migration keeps the verifier independent of the model that produced the changes. |
+| `verification_model` | inherits `agent_model` | Model for migration verification. Setting a model alone also selects its runtime. |
 | `thinking_effort` | `medium` | Advanced tuning for Claude reasoning effort |
 
 Older `claude_model` values are still read and normalized to `agent_model` for backward compatibility.
@@ -98,6 +100,8 @@ Older `claude_model` values are still read and normalized to `agent_model` for b
 | `target_version` | `--toVersion` |
 | `agent_provider` | `--agentProvider` |
 | `agent_model` | `--agentModel` |
+| `verification_provider` | `--verificationProvider` |
+| `verification_model` | `--verificationModel` |
 | `ai_fix_m365_errors` | `--aiFixM365Errors` |
 | `ai_fix_build_errors` | `--aiFixBuildErrors` |
 | `ai_max_retries` | `--aiMaxRetries` |

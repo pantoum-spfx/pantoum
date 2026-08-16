@@ -54,6 +54,8 @@ interface CliArgs {
   aiFixTypeScriptWarnings?: boolean;
   agentProvider?: 'claude' | 'github-copilot';
   agentModel?: string;
+  verificationProvider?: 'claude' | 'github-copilot';
+  verificationModel?: string;
   claudeModel?: string;
   markdown?: boolean;
   updateThirdPartyDeps?: 'none' | 'patch' | 'minor' | 'major';
@@ -86,6 +88,8 @@ function cliArgsToOverrides(argv: CliArgs): Partial<PantoumSettingsFlat> {
   if (argv.agentProvider !== undefined) overrides.agent_provider = argv.agentProvider;
   if (argv.agentModel !== undefined) overrides.agent_model = argv.agentModel;
   if (argv.agentModel === undefined && argv.claudeModel !== undefined) overrides.agent_model = argv.claudeModel;
+  if (argv.verificationProvider !== undefined) overrides.verification_provider = argv.verificationProvider;
+  if (argv.verificationModel !== undefined) overrides.verification_model = argv.verificationModel;
   if (argv.aiFixM365Errors !== undefined) overrides.ai_fix_m365_errors = argv.aiFixM365Errors;
   if (argv.aiFixBuildErrors !== undefined) overrides.ai_fix_build_errors = argv.aiFixBuildErrors;
   if (argv.aiFixThirdPartyErrors !== undefined) overrides.ai_fix_third_party_errors = argv.aiFixThirdPartyErrors;
@@ -149,6 +153,19 @@ async function runUpgrade(argv: CliArgs) {
     resolvedAgentModel,
   );
 
+  // Verification runtime is only configured when it differs from the agent runtime
+  const resolvedVerificationModel = settings.verification_model
+    ? resolveModelId(settings.verification_model, settings.verification_provider ?? settings.agent_provider)
+    : undefined;
+  if (settings.verification_provider || resolvedVerificationModel) {
+    logger.info(
+      'Verification runtime: %s (provider: %s, model: %s)',
+      getAgentDisplayName(settings.verification_provider ?? settings.agent_provider),
+      settings.verification_provider ?? settings.agent_provider,
+      resolvedVerificationModel ?? 'provider default',
+    );
+  }
+
   logger.info('Starting upgrade with resolved settings');
 
   const result = await upgradeRepo({
@@ -171,6 +188,8 @@ async function runUpgrade(argv: CliArgs) {
       aiFixBuildErrors: settings.ai_fix_build_errors,
       agentProvider: settings.agent_provider,
       claudeModel: resolvedAgentModel,
+      verificationProvider: settings.verification_provider,
+      verificationModel: resolvedVerificationModel,
       updateThirdPartyDeps: settings.update_production_deps,
       updateThirdPartyDevDeps: settings.update_dev_deps as 'none' | 'patch',
       cleanInstallAfterDepUpdate: settings.clean_install_after_updates,
@@ -286,6 +305,16 @@ async function main() {
             type: 'string',
             choices: ['sonnet', 'opus', 'gpt-5', 'gpt-5-mini', 'mai-code-1.1-flash', 'mai-code-1-flash-picker'] as const,
             description: 'Model short name for the selected runtime',
+          })
+          .option('verificationProvider', {
+            type: 'string',
+            choices: ['claude', 'github-copilot'] as const,
+            description: 'AI runtime for migration verification (default: same as agentProvider)',
+          })
+          .option('verificationModel', {
+            type: 'string',
+            choices: ['sonnet', 'opus', 'gpt-5', 'gpt-5-mini', 'mai-code-1.1-flash', 'mai-code-1-flash-picker'] as const,
+            description: 'Model short name for migration verification (default: same as agentModel)',
           })
           .option('markdown', {
             type: 'boolean',

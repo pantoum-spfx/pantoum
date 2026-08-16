@@ -12,10 +12,27 @@ import { DEFAULTS } from '../constants.js';
 import {
   createRuntimeAdapter,
   getRuntimeLabel,
+  inferProviderFromModel,
   resolveAgentProvider,
   resolveRuntimeModel,
 } from '../adapters/runtimeAdapterFactory.js';
-import { DEFAULT_AGENT_PROVIDER, VERIFICATION_DEFAULTS, type AgentProvider } from '../defaults.js';
+import {
+  DEFAULT_AGENT_PROVIDER,
+  VERIFICATION_DEFAULTS,
+  getDefaultModelForProvider,
+  type AgentProvider,
+} from '../defaults.js';
+
+/**
+ * Runtime override for the migration verification session. When absent (or a
+ * field is absent), verification inherits the migration runtime. Running the
+ * verifier on a different runtime than the migration keeps it from approving
+ * its own model family's mistakes.
+ */
+export interface VerificationRuntime {
+  provider?: AgentProvider;
+  model?: string;
+}
 import { renderTemplate, type TemplateVariables, type TemplateName } from '../utils/templateLoader.js';
 import { sanitizeErrorForLogging, sanitizePathForPrompt } from '../utils/sanitize.js';
 import * as fs from 'fs';
@@ -1196,9 +1213,21 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
     debugReports?: boolean,
     maxRetries?: number,
     thinkingEffort?: string,
-    agentProvider?: AgentProvider
+    agentProvider?: AgentProvider,
+    verificationRuntime?: VerificationRuntime
   ): Promise<{ patches: PatchObject[]; verification?: VerificationSummary }> {
     const provider = resolveAgentProvider(model, agentProvider);
+
+    // The verifier may run on a different runtime than the migration. Resolve it
+    // here (not via resolveAgentProvider) so the run-wide active provider cannot
+    // override an inferred verification provider.
+    const verifyProvider =
+      verificationRuntime?.provider
+      ?? inferProviderFromModel(verificationRuntime?.model)
+      ?? provider;
+    const verifyModel =
+      verificationRuntime?.model
+      ?? (verifyProvider === provider ? model : getDefaultModelForProvider(verifyProvider));
 
     // Step 1: Run initial migration
     const patches = await this.executeMigration(
@@ -1232,6 +1261,15 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
     const allResults: VerificationResult[] = [];
     let lastResult: VerificationResult | undefined;
 
+    if (verifyProvider !== provider || verifyModel !== model) {
+      logger.info(
+        '🔍 Verification runtime: %s (%s) — independent of the %s migration runtime',
+        getRuntimeLabel(verifyProvider),
+        verifyModel,
+        getRuntimeLabel(provider)
+      );
+    }
+
     const maxIterations = maxRetries ?? VERIFICATION_DEFAULTS.MAX_ITERATIONS;
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
       logger.info('🔍 Verification pass %d/%d...', iteration, maxIterations);
@@ -1243,12 +1281,12 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
         fromVersion,
         toVersion,
         this.migrationLog,
-        model,
+        verifyModel,
         runDirectory,
         iteration,
         debugReports,
         migrationContext,
-        provider
+        verifyProvider
       );
       allResults.push(result);
       lastResult = result;

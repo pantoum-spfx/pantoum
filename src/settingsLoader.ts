@@ -92,6 +92,8 @@ export const CLI_FIELD_MAP: Record<string, string> = {
   env_injection_strategy: 'envInjectionStrategy',
   agent_provider: 'agentProvider',
   agent_model: 'agentModel',
+  verification_provider: 'verificationProvider',
+  verification_model: 'verificationModel',
   thinking_effort: 'thinkingEffort',
   update_version_numbers: 'versionUpdates',
   update_package_json: 'updatePackageJson',
@@ -223,6 +225,22 @@ export function resolveSettings(
     merged.agent_provider,
   );
 
+  // Same consistency rule for the verification runtime — but only when configured;
+  // absent means "inherit the agent runtime" and must stay absent.
+  if (typeof merged.verification_provider === 'string') {
+    merged.verification_provider = normalizeAgentProvider(merged.verification_provider);
+  }
+  if (typeof merged.verification_model === 'string') {
+    if (merged.verification_provider === undefined) {
+      merged.verification_provider =
+        inferProviderFromModel(merged.verification_model) ?? merged.agent_provider;
+    }
+    merged.verification_model = normalizeAgentModel(
+      merged.verification_model,
+      merged.verification_provider,
+    );
+  }
+
   return merged;
 }
 
@@ -278,6 +296,29 @@ function normalizeLoadedSettings(
       normalized.agent_model,
       modelProvider ?? DEFAULT_AGENT_PROVIDER,
     );
+  }
+
+  // Verification runtime follows the same per-layer rules as the agent runtime.
+  let verificationProvider: AgentProvider | undefined;
+  if (typeof normalized.verification_provider === 'string') {
+    verificationProvider = normalizeAgentProvider(normalized.verification_provider);
+    normalized.verification_provider = verificationProvider;
+  } else if (normalized.verification_provider !== undefined) {
+    delete normalized.verification_provider;
+  }
+
+  if (typeof normalized.verification_model === 'string') {
+    const modelProvider =
+      verificationProvider ?? inferProviderFromModel(normalized.verification_model);
+    if (!verificationProvider && modelProvider) {
+      normalized.verification_provider = modelProvider;
+    }
+    normalized.verification_model = normalizeAgentModel(
+      normalized.verification_model,
+      modelProvider ?? DEFAULT_AGENT_PROVIDER,
+    );
+  } else if (normalized.verification_model !== undefined) {
+    delete normalized.verification_model;
   }
 
   delete normalized.claude_model;

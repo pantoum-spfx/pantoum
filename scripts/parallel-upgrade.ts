@@ -60,6 +60,8 @@ interface Config {
   targetVersion: string;
   agentProvider: string;
   agentModel: string;
+  verificationProvider: string;
+  verificationModel: string;
   claudeModel: string;
   thinkingEffort: string;
   excludedPatches: string;
@@ -330,6 +332,14 @@ class ParallelUpgradeEngine {
       args.push('--agentModel', this.config.claudeModel);
     }
 
+    if (this.config.verificationProvider) {
+      args.push('--verificationProvider', this.config.verificationProvider);
+    }
+
+    if (this.config.verificationModel) {
+      args.push('--verificationModel', this.config.verificationModel);
+    }
+
     // Only forward --thinkingEffort if the user explicitly passed it to the script
     if (this.config.thinkingEffort) {
       args.push('--thinkingEffort', this.config.thinkingEffort);
@@ -508,6 +518,8 @@ function parseArgs(): Config {
     targetVersion: DEFAULT_TARGET_VERSION,
     agentProvider: '',
     agentModel: '',
+    verificationProvider: '',
+    verificationModel: '',
     claudeModel: '',
     thinkingEffort: '',
     excludedPatches: 'FN019002,FN012019,FN017001',
@@ -551,6 +563,14 @@ function parseArgs(): Config {
       case '--agent-model':
       case '--agentModel':
         config.agentModel = args[++i];
+        break;
+      case '--verification-provider':
+      case '--verificationProvider':
+        config.verificationProvider = args[++i];
+        break;
+      case '--verification-model':
+      case '--verificationModel':
+        config.verificationModel = args[++i];
         break;
       case '--claude-model':
         config.claudeModel = args[++i];

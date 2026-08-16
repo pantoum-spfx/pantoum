@@ -107,8 +107,15 @@ export const RETRY_DEFAULTS = {
 
 /**
  * Verification loop settings for third-party migrations (e.g., PnP v4).
- * After migration, Claude verifies work by running grep commands and showing evidence.
- * If verification fails, a fix loop attempts to resolve remaining issues.
+ * After migration, the AI runtime verifies work by running grep commands and
+ * showing evidence. If verification fails, a fix loop attempts to resolve
+ * remaining issues.
+ *
+ * The verification session can run on a different runtime than the migration
+ * (`verification_provider` / `verification_model` settings). When unset, it
+ * inherits the migration runtime — a verifier from the same model family can
+ * approve its own mistakes, so pinning an independent verifier is recommended
+ * for non-Claude migration runtimes.
  */
 export const VERIFICATION_DEFAULTS = {
   /** Enable verification phase after migrations */
@@ -290,6 +297,10 @@ export interface PantoumSettingsFlat {
   env_injection_strategy: EnvInjectionStrategy;
   agent_provider: AgentProvider;
   agent_model: string;
+  /** Runtime for the migration verification session; unset = inherit agent_provider */
+  verification_provider?: AgentProvider;
+  /** Model for the migration verification session; unset = inherit agent_model (or the verification provider's default) */
+  verification_model?: string;
   thinking_effort: ThinkingEffort;
   update_version_numbers: boolean;
   update_package_json: boolean;
@@ -329,6 +340,7 @@ export function buildDefaultSettings(): PantoumSettingsFlat {
     env_injection_strategy: DEFAULT_ENV_INJECTION_STRATEGY,
     agent_provider: DEFAULT_AGENT_PROVIDER,
     agent_model: DEFAULT_AGENT_MODEL,
+    // verification_provider / verification_model deliberately absent: inherit the agent runtime
     thinking_effort: DEFAULT_THINKING_EFFORT,
     update_version_numbers: VERSION_UPDATE_DEFAULTS.ENABLED,
     update_package_json: VERSION_UPDATE_DEFAULTS.UPDATE_PACKAGE_JSON,
