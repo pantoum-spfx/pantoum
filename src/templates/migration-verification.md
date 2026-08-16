@@ -23,6 +23,12 @@ For each pattern below, run the grep command and report the result:
 
 {{verificationChecks}}
 
+## Always-Fail Conditions
+Independent of the checks above, report FAIL when you find any of these in the migrated code — they mean the migration is broken even though the build passes:
+- A newly introduced cast (`as any`, `as unknown as`) around package initialization (`spfi(...)`, `graphfi(...)`, `SPFx(...)`, `GraphSPFx(...)`)
+- A call on a cast object to an API the installed package version does not export
+- Working initialization code rewritten into a form that only typechecks because of a cast
+
 ## Your Task
 
 1. Run EACH grep command above

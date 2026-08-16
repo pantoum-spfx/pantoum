@@ -169,21 +169,26 @@ Install if needed: `npm install --save-dev @microsoft/microsoft-graph-types`
 - Class services: Initialize in constructor/onInit with this.context
 
 ## WebPartContext vs PageContext
-PnP v4 requires full WebPartContext (not just PageContext):
-- PageContext: page metadata (site URL, user info)
-- WebPartContext: includes HttpClient, AadTokenProviderFactory, auth tokens
+Prefer the full WebPartContext (it carries HttpClient, AadTokenProviderFactory and auth
+tokens). A service that only has a PageContext wraps it — SPFx() accepts any object with
+a `pageContext` property:
 
 ```typescript
-// Incorrect (PageContext only - fails silently):
-this.sp = spfi().using(SPFx(this.pageContext as any));
+// Valid when only a PageContext is available — if this form is already present, keep it:
+this.sp = spfi().using(SPFx({ pageContext: this.pageContext }));
 
-// Correct (use setContext with full WebPartContext):
-public setContext(context: any): void {
+// Preferred when the web part can pass its full context:
+public setContext(context: WebPartContext): void {
   this.sp = spfi().using(SPFx(context));
 }
 // Call from WebPart.onInit():
 spo.setContext(this.context);
 ```
+
+Never pass a bare PageContext directly to SPFx(), and never silence the resulting type
+error with a cast — that compiles but fails at runtime on the first request. An
+initialization that already compiles and works is not part of this migration: leave it
+unchanged.
 
 ---
 
