@@ -611,12 +611,11 @@ export class ReportService {
     }
 
     if (this.isSolutionSuccessful(report)) {
-      // Build succeeded
+      // Build succeeded — that is what was verified; correctness review is the user's
       if (report.m365CliError) {
-        // M365 CLI had errors but solution still built successfully
-        return '✅ Success (M365 CLI had warnings)';
+        return '✅ Build green — review required (M365 CLI had warnings)';
       }
-      return '✅ Success';
+      return '✅ Build green — review required';
     }
 
     // Build failed

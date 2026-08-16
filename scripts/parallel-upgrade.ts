@@ -463,6 +463,40 @@ class ParallelUpgradeEngine {
     }
   }
 
+  /**
+   * Deterministic post-run signals read from the solution's newest run
+   * directory. Provider rejections (Azure content-policy 400s and friends)
+   * are backend failures and must be visible in the summary, whether the
+   * solution recovered or not.
+   */
+  private collectRunSignals(solutionName: string): { providerRejections: number; verificationFailed: boolean } {
+    const signals = { providerRejections: 0, verificationFailed: false };
+    try {
+      const solutionDir = path.join(this.config.solutionsDir, solutionName);
+      const runDirs = fs.readdirSync(solutionDir)
+        .filter((d) => d.startsWith('pantoum_run_'))
+        .sort();
+      if (runDirs.length === 0) return signals;
+      const runDir = path.join(solutionDir, runDirs[runDirs.length - 1]);
+      for (const f of fs.readdirSync(runDir)) {
+        const filePath = path.join(runDir, f);
+        if (f.startsWith('pantoum_error_analysis_') && f.endsWith('.md')) {
+          const head = fs.readFileSync(filePath, 'utf8').slice(0, 2000);
+          if (/CAPIError|providerCallId=|content management policy/.test(head)) {
+            signals.providerRejections++;
+          }
+        } else if (f.startsWith('pantoum_error_') && f.endsWith('.log')) {
+          if (fs.readFileSync(filePath, 'utf8').includes('Migration verification failed')) {
+            signals.verificationFailed = true;
+          }
+        }
+      }
+    } catch {
+      // Signals are advisory annotations; never fail the summary over them.
+    }
+    return signals;
+  }
+
   private displayFinalSummary(): void {
     clearScreen();
 
@@ -476,23 +510,32 @@ class ParallelUpgradeEngine {
     console.log(colorize('cyan', colorize('bold', '════════════════════════════════════════════════════════════')));
     console.log('');
 
-    console.log(`  ${colorize('green', colorize('bold', 'Successful:'))} ${success.length}`);
-    console.log(`  ${colorize('red', colorize('bold', 'Failed:'))}     ${failed.length}`);
-    console.log(`  ${colorize('bold', 'Total time:')} ${formatDuration(totalDuration)}`);
+    console.log(`  ${colorize('green', colorize('bold', 'Build green:'))} ${success.length}`);
+    console.log(`  ${colorize('red', colorize('bold', 'Failed:'))}      ${failed.length}`);
+    console.log(`  ${colorize('bold', 'Total time:')}  ${formatDuration(totalDuration)}`);
     console.log('');
 
     if (failed.length > 0) {
       console.log(colorize('red', colorize('bold', 'Failed solutions:')));
       for (const result of failed) {
-        console.log(`  ${colorize('red', '\u2717')} ${result.solutionName} (${formatDuration(result.duration)})`);
+        const signals = this.collectRunSignals(result.solutionName);
+        const notes: string[] = [];
+        if (signals.verificationFailed) notes.push('migration verification failed');
+        if (signals.providerRejections > 0) notes.push(`${signals.providerRejections}x rejected by AI provider (backend)`);
+        const note = notes.length > 0 ? colorize('yellow', ` \u2014 ${notes.join(', ')}`) : '';
+        console.log(`  ${colorize('red', '\u2717')} ${result.solutionName} (${formatDuration(result.duration)})${note}`);
       }
       console.log('');
     }
 
     if (success.length > 0) {
-      console.log(colorize('green', colorize('bold', 'Successful solutions:')));
+      console.log(colorize('green', colorize('bold', 'Build green (review required):')));
       for (const result of success) {
-        console.log(`  ${colorize('green', '\u2713')} ${result.solutionName} (${formatDuration(result.duration)})`);
+        const signals = this.collectRunSignals(result.solutionName);
+        const note = signals.providerRejections > 0
+          ? colorize('yellow', ` \u2014 ${signals.providerRejections}x AI provider rejection(s) absorbed by retry`)
+          : '';
+        console.log(`  ${colorize('green', '\u2713')} ${result.solutionName} (${formatDuration(result.duration)})${note}`);
       }
     }
 

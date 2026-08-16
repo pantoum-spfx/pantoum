@@ -63,11 +63,27 @@ interface ErrorContext {
  * - Simplifying complex conditions to hardcoded values
  * - Deleting "unnecessary" code that's actually critical
  */
+/**
+ * A request the AI provider's service rejected (content filter, 4xx/5xx),
+ * as opposed to the model failing at the task. These are backend failures;
+ * they must surface prominently and never be silently folded into
+ * "the AI could not fix it".
+ */
+export function isProviderServiceError(message: string): boolean {
+  return /CAPIError|providerCallId=|content management policy|\bstatus=[45]\d\d\b/.test(message);
+}
+
 export class ErrorAnalyzer {
   private patchRepository?: PatchRepository;
+  private providerErrorCount = 0;
 
   constructor(patchRepository?: PatchRepository) {
     this.patchRepository = patchRepository;
+  }
+
+  /** Requests rejected by the AI provider's service during this run */
+  getProviderErrorCount(): number {
+    return this.providerErrorCount;
   }
   
   /**
@@ -593,7 +609,13 @@ export class ErrorAnalyzer {
       
     } catch (error: any) {
       logger.error('❌ %s analysis failed: %s', runtimeLabel, error.message || error);
-      
+
+      if (isProviderServiceError(String(error.message ?? ''))) {
+        this.providerErrorCount++;
+        logger.error('   🚫 The AI provider rejected this request (service-side failure, not a code problem)');
+        logger.error('   → Provider rejections this solution: %d', this.providerErrorCount);
+      }
+
       // Log more details about the error
       if (error.exitCode !== undefined) {
         logger.error('   → %s exited with code: %d', runtimeLabel, error.exitCode);

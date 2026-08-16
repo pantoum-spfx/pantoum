@@ -15,6 +15,7 @@ import {
   resolveRuntimeModel,
 } from '../adapters/runtimeAdapterFactory.js';
 import { ClaudeMigrationExecutor, type VerificationRuntime } from './claudeMigrationExecutor.js';
+import type { VerificationSummary } from '../schema/verificationSchema.js';
 import { VersionUpdateService } from './versionUpdateService.js';
 import { getRenderedTemplates, clearTemplateLog } from '../utils/templateLoader.js';
 import * as fs from 'fs';
@@ -62,6 +63,28 @@ export class PatchService {
     this.errorAnalyzer = new ErrorAnalyzer(this.patchRepo);
     this.migrationExecutor = new ClaudeMigrationExecutor();
     this.versionUpdateService = new VersionUpdateService();
+  }
+
+  /** Requests rejected by the AI provider's service during this run */
+  getProviderErrorCount(): number {
+    return this.errorAnalyzer.getProviderErrorCount();
+  }
+
+  /**
+   * A migration whose verification ended FAILED is unproven — the verifier
+   * found concrete remaining occurrences after the fix iterations ran out.
+   * A green build later cannot un-fail it; the solution must fail loudly
+   * rather than report success on an unverified migration.
+   */
+  private assertVerificationPassed(verification: VerificationSummary | undefined, packageName: string): void {
+    if (!verification || verification.status === 'PASSED') return;
+    const issues = (verification.remainingIssues ?? [])
+      .map(i => `${i.pattern} (${i.locations.length} occurrence(s))`)
+      .join(', ');
+    throw new Error(
+      `Migration verification failed for ${packageName} after ${verification.totalIterations} iteration(s)` +
+      (issues ? `: ${issues}` : '')
+    );
   }
 
   /**
@@ -135,7 +158,7 @@ export class PatchService {
 
           // Execute Claude migration - pass actual SPFx target version
           const runDirectory = this.patchRepo.getSolutionRunDirectory(solutionName);
-          const { patches: migrationPatches } = await this.migrationExecutor.executeMigrationWithVerification(
+          const { patches: migrationPatches, verification: gulpVerification } = await this.migrationExecutor.executeMigrationWithVerification(
             solutionPath,
             packageName,
             'gulp',  // from (build system)
@@ -149,6 +172,8 @@ export class PatchService {
             agentProvider,
             verificationRuntime
           );
+
+          this.assertVerificationPassed(gulpVerification, packageName);
 
           // Add migration patches to auto patches
           migrationPatches.forEach(p => p.stage = 'upgrade');
@@ -535,6 +560,9 @@ export class PatchService {
               }
             }
           }
+
+          // Traceability data is recorded above; only now is failing loud safe
+          this.assertVerificationPassed(verification, step.packageName);
 
           // Add the original dependency update/remove patch
           const depUpdatePatch = toPatch(step, solutionPath);

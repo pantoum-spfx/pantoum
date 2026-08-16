@@ -706,17 +706,28 @@ export class UpgradeService {
       buildSuccess, buildFixAttempts > 0, buildFixAttempts);
 
     // Check if there were build errors and handle based on flag
+    const providerErrors = this.patchService.getProviderErrorCount();
     if (buildResults.buildErrors.length > 0) {
       logger.error('   ❌ Build failed with %d errors', buildResults.buildErrors.length);
+      if (providerErrors > 0) {
+        logger.error('   🚫 %d AI fix request(s) were rejected by the AI provider (service-side failure)', providerErrors);
+      }
 
       if (flags.onSingleSolutionFail === 'halt') {
-        const errorMsg = `Build/test errors in ${solPathRel}:\n${buildResults.buildErrors.join('\n')}`;
+        const providerNote = providerErrors > 0
+          ? ` (${providerErrors} AI fix request(s) rejected by the AI provider — service-side failure)`
+          : '';
+        const errorMsg = `Build/test errors in ${solPathRel}${providerNote}:\n${buildResults.buildErrors.join('\n')}`;
         throw new Error(errorMsg);
       }
       // Even with 'continue', record that we had errors
-      solutionReports[solPathRel].error = `Build failed with ${buildResults.buildErrors.length} errors`;
+      solutionReports[solPathRel].error = `Build failed with ${buildResults.buildErrors.length} errors` +
+        (providerErrors > 0 ? ` (${providerErrors} AI fix request(s) rejected by the AI provider)` : '');
     } else {
-      logger.info('   ✅ Solution upgraded successfully!');
+      logger.info('   ✅ Solution upgraded — build green');
+      if (providerErrors > 0) {
+        logger.warn('   ⚠️ %d AI request(s) rejected by the AI provider were absorbed by retries', providerErrors);
+      }
     }
 
     // 6) Optional: Update third-party dependencies after successful SPFx upgrade
