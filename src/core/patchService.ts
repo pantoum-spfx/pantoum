@@ -14,7 +14,7 @@ import {
   resolveAgentProvider,
   resolveRuntimeModel,
 } from '../adapters/runtimeAdapterFactory.js';
-import { ClaudeMigrationExecutor, type VerificationRuntime } from './claudeMigrationExecutor.js';
+import { ClaudeMigrationExecutor } from './claudeMigrationExecutor.js';
 import type { VerificationSummary } from '../schema/verificationSchema.js';
 import { VersionUpdateService } from './versionUpdateService.js';
 import { getRenderedTemplates, clearTemplateLog } from '../utils/templateLoader.js';
@@ -43,8 +43,6 @@ interface GeneratePatchesOptions {
   versionUpdateOptions?: import('./versionUpdateService.js').VersionUpdateOptions;
   claudeModel?: string;
   agentProvider?: AgentProvider;
-  verificationProvider?: AgentProvider;
-  verificationModel?: string;
   envInjectionStrategy?: EnvInjectionStrategy;
   debugReports?: boolean;
   aiMaxRetries?: number;
@@ -106,10 +104,6 @@ export class PatchService {
     const agentProvider = resolveAgentProvider(options.claudeModel, options.agentProvider);
     const agentModel = resolveRuntimeModel(options.claudeModel, agentProvider);
     const runtimeLabel = getRuntimeLabel(agentProvider);
-    const verificationRuntime =
-      options.verificationProvider || options.verificationModel
-        ? { provider: options.verificationProvider, model: options.verificationModel }
-        : undefined;
 
     const allPatches: PatchObject[] = [];
 
@@ -169,8 +163,7 @@ export class PatchService {
             options.debugReports,
             options.aiMaxRetries,
             options.thinkingEffort,
-            agentProvider,
-            verificationRuntime
+            agentProvider
           );
 
           this.assertVerificationPassed(gulpVerification, packageName);
@@ -209,7 +202,7 @@ export class PatchService {
     logger.info('PIPELINE:4:post:event=start');
 
     for (const step of postSteps) {
-      const patches = await this.processManualStep(step, solutionPath, targetVersion, manualConfig, agentModel, options.debugReports, options.aiMaxRetries, agentProvider, verificationRuntime);
+      const patches = await this.processManualStep(step, solutionPath, targetVersion, manualConfig, agentModel, options.debugReports, options.aiMaxRetries, agentProvider);
       patches.forEach(p => p.stage = 'post-upgrade');
       allPatches.push(...patches);
     }
@@ -410,8 +403,7 @@ export class PatchService {
     claudeModel?: string,
     debugReports?: boolean,
     aiMaxRetries?: number,
-    agentProvider?: AgentProvider,
-    verificationRuntime?: VerificationRuntime
+    agentProvider?: AgentProvider
   ): Promise<PatchObject[]> {
     // Skip success steps as they are handled separately
     if (step.when === 'success') {
@@ -486,8 +478,7 @@ export class PatchService {
             debugReports,
             aiMaxRetries,
             undefined,
-            stepProvider,
-            verificationRuntime
+            stepProvider
           );
 
           // Log verification results if available
