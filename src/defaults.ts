@@ -113,9 +113,9 @@ export const RETRY_DEFAULTS = {
  *
  * The verification session can run on a different runtime than the migration
  * (`verification_provider` / `verification_model` settings). When unset, it
- * inherits the migration runtime — a verifier from the same model family can
- * approve its own mistakes, so pinning an independent verifier is recommended
- * for non-Claude migration runtimes.
+ * inherits the migration runtime. Opt-in: a verifier from a different model
+ * family cannot approve its own family's mistakes, at the cost of requiring
+ * both runtimes to be available.
  */
 export const VERIFICATION_DEFAULTS = {
   /** Enable verification phase after migrations */
