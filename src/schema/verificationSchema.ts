@@ -73,6 +73,13 @@ export interface VerificationResult {
   checks: VerificationCheck[];
   /** All tool calls made during this verification iteration */
   toolCalls?: VerificationToolCall[];
+  /**
+   * Set when the verification session itself failed (provider/service error).
+   * Checks are then NOT_VERIFIED because the verifier could not run — NOT
+   * because it judged the migration broken. Callers must not treat such a
+   * result as a genuine FAILED verdict.
+   */
+  sessionError?: string;
   /** Fixes applied after this iteration (if not last iteration) */
   fixesApplied?: Array<{
     file: string;

@@ -19,6 +19,12 @@ describe('isProviderServiceError', () => {
     expect(isProviderServiceError('Execution failed [status=503, providerCallId=abc]')).toBe(true);
   });
 
+  it('recognizes session-create refusals and model unavailability (2026-08-20 outage)', () => {
+    expect(
+      isProviderServiceError('Request session.create failed with message: Model "mai-code-1.1-flash" is not available.'),
+    ).toBe(true);
+  });
+
   it('does not flag model or environment failures', () => {
     expect(isProviderServiceError('Timeout after 600000ms waiting for session.idle')).toBe(false);
     expect(isProviderServiceError('spawn claude ENOENT')).toBe(false);

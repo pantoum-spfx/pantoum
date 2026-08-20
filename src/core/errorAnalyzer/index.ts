@@ -64,13 +64,14 @@ interface ErrorContext {
  * - Deleting "unnecessary" code that's actually critical
  */
 /**
- * A request the AI provider's service rejected (content filter, 4xx/5xx),
- * as opposed to the model failing at the task. These are backend failures;
- * they must surface prominently and never be silently folded into
- * "the AI could not fix it".
+ * A request the AI provider's service rejected or could not serve (content
+ * filter, 4xx/5xx, session creation refused, model unavailable), as opposed
+ * to the model failing at the task. These are backend failures; they must
+ * surface prominently and never be silently folded into "the AI could not
+ * fix it".
  */
 export function isProviderServiceError(message: string): boolean {
-  return /CAPIError|providerCallId=|content management policy|\bstatus=[45]\d\d\b/.test(message);
+  return /CAPIError|providerCallId=|content management policy|\bstatus=[45]\d\d\b|session\.create failed|is not available/.test(message);
 }
 
 export class ErrorAnalyzer {

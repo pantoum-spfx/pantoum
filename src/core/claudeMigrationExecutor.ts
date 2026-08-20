@@ -1024,7 +1024,7 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
         }, null, 2), { encoding: DEFAULTS.ENCODING as BufferEncoding, mode: 0o600 });
       }
 
-      // Return failed result with captured tool calls
+      // The verifier could not run — that is a service failure, not a verdict.
       return {
         timestamp: new Date().toISOString(),
         packageName,
@@ -1034,6 +1034,7 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
         total: patterns.length,
         allPassed: false,
         iteration,
+        sessionError: String(error.message ?? error),
         checks: patterns.map(p => ({
           instruction: p.description,
           pattern: p.pattern,
@@ -1253,6 +1254,14 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
       allResults.push(result);
       lastResult = result;
 
+      if (result.sessionError) {
+        // The verifier never ran — do not fix against a fabricated verdict.
+        logger.error('   🚫 Verification session failed (provider/service): %s', result.sessionError);
+        if (iteration === maxIterations) break;
+        logger.info('   → Retrying verification (attempt %d/%d)...', iteration + 1, maxIterations);
+        continue;
+      }
+
       if (result.allPassed) {
         logger.info('✅ All %d verification checks passed!', result.total);
         break;
@@ -1298,6 +1307,17 @@ ${check.findings?.map(f => `- ${f}`).join('\n') || 'Run grep to find locations'}
 
       // Store fixes applied in the result for this iteration
       result.fixesApplied = fixesApplied;
+    }
+
+    // A final session error means the migration is unverified, not judged
+    // broken. Fail loudly with the true cause instead of a fabricated
+    // FAILED-with-zero-findings verdict (2026-08-20: a model-availability
+    // outage burned all iterations and produced exactly that).
+    if (lastResult?.sessionError) {
+      throw new Error(
+        `Migration verification could not run for ${packageName}: ${lastResult.sessionError} ` +
+        `(provider/service failure across ${allResults.length} attempt(s))`
+      );
     }
 
     // Build verification summary with all iteration data

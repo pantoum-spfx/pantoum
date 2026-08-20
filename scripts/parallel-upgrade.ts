@@ -468,18 +468,36 @@ class ParallelUpgradeEngine {
         .sort();
       if (runDirs.length === 0) return signals;
       const runDir = path.join(solutionDir, runDirs[runDirs.length - 1]);
+      const providerRe = /CAPIError|providerCallId=|content management policy|session\.create failed|is not available/;
+      let providerErrorInLog = false;
       for (const f of fs.readdirSync(runDir)) {
         const filePath = path.join(runDir, f);
         if (f.startsWith('pantoum_error_analysis_') && f.endsWith('.md')) {
-          const head = fs.readFileSync(filePath, 'utf8').slice(0, 2000);
-          if (/CAPIError|providerCallId=|content management policy/.test(head)) {
+          // AI error-fix attempt rejected by the provider
+          if (providerRe.test(fs.readFileSync(filePath, 'utf8').slice(0, 2000))) {
+            signals.providerRejections++;
+          }
+        } else if (
+          (f.startsWith('pantoum_ai_migration_error_') || f.startsWith('ai_debug_verification_error_')) &&
+          f.endsWith('.json')
+        ) {
+          // migration or verification session died on the provider
+          if (providerRe.test(fs.readFileSync(filePath, 'utf8').slice(0, 4000))) {
             signals.providerRejections++;
           }
         } else if (f.startsWith('pantoum_error_') && f.endsWith('.log')) {
-          if (fs.readFileSync(filePath, 'utf8').includes('Migration verification failed')) {
+          const content = fs.readFileSync(filePath, 'utf8');
+          if (content.includes('Migration verification failed')) {
             signals.verificationFailed = true;
           }
+          if (providerRe.test(content)) {
+            providerErrorInLog = true;
+          }
         }
+      }
+      // The error log is a fallback signal only — specific artifacts above count precisely.
+      if (signals.providerRejections === 0 && providerErrorInLog) {
+        signals.providerRejections = 1;
       }
     } catch {
       // Signals are advisory annotations; never fail the summary over them.
