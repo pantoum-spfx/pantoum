@@ -64,15 +64,18 @@ Pantoum can also run its AI stages on GitHub Copilot. Set `agent_provider: "gith
 |-------|-----------|
 | GPT-5 (default) | `gpt-5` |
 | GPT-5 mini | `gpt-5-mini` |
-| MAI Code 1.1 Flash | `mai-code-1.1-flash` |
+| MAI Code Flash (current variant) | `mai-code-1-flash-picker` |
+| MAI Code 1.1 Flash (pinned) | `mai-code-1.1-flash` |
 
-Authentication comes from the Copilot CLI's own login — install the [GitHub Copilot CLI](https://github.com/github/copilot-cli) and sign in once with `copilot`, then Pantoum uses that session. Model availability depends on your Copilot plan; if a model is rejected at session start, pick another from the table.
+Authentication comes from the Copilot CLI's own login — install the [GitHub Copilot CLI](https://github.com/github/copilot-cli) and sign in once with `copilot`, then Pantoum uses that session.
+
+Model availability depends on your Copilot plan and, on Business/Enterprise plans, on the organization's Copilot model policies — some models are off by default until an administrator enables them. A model your plan does not serve fails at session start with `Model "…" is not available`; Pantoum reports this as a provider-side failure. `mai-code-1-flash-picker` routes to the MAI Code variant your plan currently serves, so it keeps working when pinned model ids are rotated or policy-gated — prefer it unless you need a specific pinned variant.
 
 The prompts are the same for both runtimes. Only the execution backend changes.
 
 ## Usage Visibility
 
-Pantoum writes Claude usage details into its reports so you can see what the AI did and how much it cost.
+Pantoum writes AI usage details into its reports so you can see what the AI did and how much it cost.
 
 ## Next Steps
 

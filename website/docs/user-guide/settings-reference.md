@@ -41,7 +41,7 @@ Pantoum already uses provider-neutral names in the public settings contract:
 | Setting | Default | Notes |
 |---------|---------|-------|
 | `agent_provider` | `claude` | AI runtime: `claude` or `github-copilot` |
-| `agent_model` | `sonnet` | Claude: `sonnet`, `opus` — Copilot: `gpt-5`, `gpt-5-mini`, `mai-code-1.1-flash` |
+| `agent_model` | `sonnet` | Claude: `sonnet`, `opus` — Copilot: `gpt-5`, `gpt-5-mini`, `mai-code-1-flash-picker`, `mai-code-1.1-flash` (pinned ids can be policy-gated by the Copilot plan; the picker follows the currently served MAI variant) |
 | `thinking_effort` | `medium` | Advanced tuning for Claude reasoning effort |
 
 Older `claude_model` values are still read and normalized to `agent_model` for backward compatibility.
