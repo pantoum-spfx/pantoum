@@ -62,18 +62,19 @@ solutionsRouter.post('/scan', (req, res) => {
       return res.status(400).json({ error: 'rootPath is required' });
     }
 
+    let resolvedRoot: string;
     try {
-      validatePathUnderHome(rootPath);
+      resolvedRoot = validatePathUnderHome(rootPath);
     } catch {
       return res.status(400).json({ error: 'rootPath is outside allowed directory' });
     }
 
-    if (!fs.existsSync(rootPath)) {
-      return res.status(400).json({ error: `Directory not found: ${rootPath}` });
+    if (!fs.existsSync(resolvedRoot)) {
+      return res.status(400).json({ error: `Directory not found: ${resolvedRoot}` });
     }
 
     const startTime = Date.now();
-    const solutions = scanForSolutions(rootPath);
+    const solutions = scanForSolutions(resolvedRoot);
 
     const response: ScanResponse = {
       solutions,

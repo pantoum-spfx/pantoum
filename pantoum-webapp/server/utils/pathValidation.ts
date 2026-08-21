@@ -23,12 +23,29 @@ function validatePath(userPath: string, allowedBase: string): string {
 }
 
 /**
+ * Expand a leading `~` to the user's home directory. Users naturally type
+ * `~/projects/...` into the Studio path field; Node's fs treats that `~` as a
+ * literal directory name.
+ */
+export function expandHomePath(userPath: string): string {
+  const home = process.env.HOME || process.env.USERPROFILE || '/';
+  if (userPath === '~') return home;
+  if (userPath.startsWith('~/') || userPath.startsWith('~\\')) {
+    return path.join(home, userPath.slice(2));
+  }
+  return userPath;
+}
+
+/**
  * Validate a path against the user's home directory.
  * This is a broad check — filesystem access is limited to paths under $HOME.
  * For a localhost dev tool, this prevents the worst abuse (reading /etc, /root, etc.)
  * while still allowing flexible project paths.
+ *
+ * Returns the resolved absolute path (with `~` expanded) — callers should use
+ * this instead of the raw input.
  */
 export function validatePathUnderHome(userPath: string): string {
   const home = process.env.HOME || process.env.USERPROFILE || '/';
-  return validatePath(userPath, home);
+  return validatePath(expandHomePath(userPath), home);
 }
