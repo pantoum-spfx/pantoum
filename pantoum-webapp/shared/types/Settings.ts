@@ -187,11 +187,11 @@ export const SETTINGS_TABS: SettingsTab[] = [
   {
     id: 'advanced',
     label: 'Advanced',
-    description: 'Power-user controls for the Claude runtime, version updates, pipeline tuning, and Studio behavior.',
+    description: 'Power-user controls for the AI runtime, version updates, pipeline tuning, and Studio behavior.',
     sections: [
       {
         title: 'AI Runtime',
-        settings: ['agent_model', 'thinking_effort'],
+        settings: ['agent_provider', 'agent_model', 'thinking_effort'],
       },
       {
         title: 'AI Fixing',
