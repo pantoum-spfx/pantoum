@@ -390,7 +390,10 @@ export const ReportsPage: React.FC = () => {
 
       <div className={styles.reports}>
         {reports.map((report) => {
-          const isSuccess = report.status.includes('Success');
+          // Key on the stable ✅ marker, not English wording — the engine's
+          // success status reads "Build green — review required" since the
+          // honest-reporting change (older reports say "Success").
+          const isSuccess = report.status.includes('✅');
           const isSkipped = report.status.includes('Skipped');
           return (
             <Card
@@ -472,7 +475,7 @@ const ReportDetailView: React.FC<ReportDetailViewProps> = ({
 }) => {
   const [expandedActions, setExpandedActions] = useState<Record<string, boolean>>({});
   const { summary, report } = detail;
-  const isSuccess = summary.status.includes('Success');
+  const isSuccess = summary.status.includes('✅');
   const isSkipped = report.skipped;
 
   const allPatches = useMemo(
