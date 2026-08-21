@@ -120,11 +120,11 @@ export const UpgradePage: React.FC = () => {
   const [parallelism, setParallelism] = useState(1);
   const [startTime, setStartTime] = useState<number | null>(null);
 
-  // Reconnect to an active server session on mount (e.g. after tab close/refresh)
+  // Sync with the server's active session on mount (tab refresh, or returning
+  // to this page while a newer run executes) — the store decides whether the
+  // current view may be replaced.
   useEffect(() => {
-    if (batchStatus === 'idle' && !sessionId) {
-      reconnectSession();
-    }
+    reconnectSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
   }, []);
 

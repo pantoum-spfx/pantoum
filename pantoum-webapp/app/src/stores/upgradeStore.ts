@@ -260,8 +260,14 @@ export const useUpgradeStore = create<UpgradeStore>((set, get) => ({
 
   reconnectSession: async () => {
     const state = get();
-    // Only attempt reconnection when the store is idle and has no session
-    if (state.batchStatus !== 'idle' || state.sessionId) return;
+    // Re-sync whenever the store is settled — idle, or showing a finished
+    // batch. A stale completed view must never shadow a run that is active
+    // server-side (2026-08-21: the page kept showing the previous run's
+    // completion card while a new upgrade was executing). Never disturb a
+    // starting/running view.
+    const settled = (s: string) => s === 'idle' || s === 'complete' || s === 'failed';
+    if (!settled(state.batchStatus)) return;
+    const shownSessionId = state.sessionId;
 
     try {
       const res = await fetch('/api/upgrade/active');
@@ -271,8 +277,11 @@ export const useUpgradeStore = create<UpgradeStore>((set, get) => ({
       // Nothing to reconnect to
       if (!session || (!isRunning && !hasReplayData)) return;
 
-      // Don't reconnect if the store moved out of idle while we were fetching
-      if (get().batchStatus !== 'idle') return;
+      // The store already shows this session's final state — nothing newer
+      if (!isRunning && session.id === shownSessionId) return;
+
+      // Don't reconnect if the store moved out of a settled state while we were fetching
+      if (!settled(get().batchStatus)) return;
 
       // Build initial solution map from the session's solution list
       const solutionMap = new Map<string, SolutionState>();
