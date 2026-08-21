@@ -97,11 +97,17 @@ export function upgradeRouter(sessionManager: SessionManager): Router {
     const aborted = orchestrator.abort(session.id);
 
     if (aborted) {
-      sessionManager.updateSession(session.id, {
-        status: 'aborted',
-        completedAt: new Date().toISOString(),
+      // Abort takes effect between solutions: the signal stops further
+      // solutions from starting, but the engine cannot cancel the solution
+      // already in flight — it finishes (or fails) in the background, and the
+      // orchestrator finalizes the session as 'aborted' at that point.
+      // Marking it aborted+completed here would claim work stopped while
+      // files are still being modified.
+      res.json({
+        success: true,
+        status: 'aborting',
+        message: 'No further solutions will start. The solution currently in flight finishes in the background; the session is finalized when it ends.',
       });
-      res.json({ success: true, status: 'aborted' });
     } else {
       // Session exists but isn't running (already finished)
       res.json({ success: false, status: session.status, message: 'Session is not running' });
